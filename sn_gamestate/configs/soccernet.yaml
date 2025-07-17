@@ -42,8 +42,8 @@ experiment_name: "sn-gamestate"
 
 # Path definitions
 home_dir: "${oc.env:HOME}"
-data_dir: "${project_dir}/data"
-model_dir: "${project_dir}/pretrained_models"
+data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
+model_dir: "/netscratch/eattar/SoccerNet/sn-gamestate/pretrained_models"
 
 # Machine configuration
 num_cores: 4

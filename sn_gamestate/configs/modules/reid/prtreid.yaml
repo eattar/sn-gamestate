@@ -7,7 +7,7 @@ batch_size: 32
 job_id: "${oc.env:SLURM_JOBID,0}" # TODO
 save_path: reid
 use_keypoints_visibility_scores_for_reid: False
-training_enabled: False
+training_enabled: True
 cfg:
   project:
     name: "TrackLab"
@@ -36,10 +36,10 @@ cfg:
 
   model:
     name: "bpbreid"
-    pretrained: True
+    pretrained: False
     save_model_flag: True
     load_config: True
-    load_weights: "${model_dir}/reid/prtreid-soccernet-baseline.pth.tar"
+    load_weights: ""
     bpbreid:
       pooling: "gwap" # ['gap', 'gmp', 'gwap', 'gwap2']
       normalization: "identity" # 'batch_norm_2d' 'identity'

@@ -87,7 +87,7 @@ cfg:
     max_epoch: 20
 
   test:
-    evaluate: True
+    evaluate: False
 #    evaluate: False
     detailed_ranking: False
     start_eval: 40

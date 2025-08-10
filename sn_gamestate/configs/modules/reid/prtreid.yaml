@@ -51,7 +51,7 @@ cfg:
       learnable_attention_enabled: True
       dim_reduce: "after_pooling" # 'none', 'before_pooling', 'after_pooling', 'after_pooling_with_dropout'
       dim_reduce_output: 256
-      backbone: "resnet50" # 'hrnet32' 'resnet50' 'fastreid_resnet' 'fastreid_resnet_ibn' 'fastreid_resnet_nl' 'fastreid_resnet_ibn_nl'
+      backbone: "hrnet32" # 'hrnet32' 'resnet50' 'fastreid_resnet' 'fastreid_resnet_ibn' 'fastreid_resnet_nl' 'fastreid_resnet_ibn_nl'
       test_embeddings: ["globl"] #  ['globl', 'foreg', 'conct', 'parts']
       test_use_target_segmentation: "none" # 'none' 'hard' 'soft'
       shared_parts_id_classifier: False
@@ -59,7 +59,7 @@ cfg:
       masks:
         type: "disk"
         dir: "${.....dataset.masks_mode}" # relative import, with a lot of indirection
-        preprocess: "id"
+        preprocess: "eight"
 
   loss:
     name: "part_based"
@@ -69,13 +69,13 @@ cfg:
       weights:
         globl:
           id: 1.0
-          tr: 0.0
+          tr: 0.25
         foreg:
           id: 1.0
-          tr: 0.0
+          tr: 0.25
         conct:
           id: 1.0
-          tr: 0.0
+          tr: 0.25
         parts:
           id: 0.0
           tr: 1.0
@@ -84,13 +84,13 @@ cfg:
 
   train:
     batch_size: 64
-    max_epoch: 20
+    max_epoch: 80
 
   test:
     evaluate: True
 #    evaluate: False
     detailed_ranking: False
-    start_eval: 40
+    start_eval: 10
     batch_size: 64
     batch_size_pairwise_dist_matrix: 5000
     normalize_feature: True

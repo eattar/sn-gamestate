@@ -5,7 +5,6 @@ models/
 outputs/
 multiruns/
 pretrained_models/
-.vscode/
 notebooks/
 weights/
 slurm/

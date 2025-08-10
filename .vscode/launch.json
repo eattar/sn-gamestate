@@ -1,0 +1,13 @@
+{
+  "configurations": [
+    {
+      "name": "debug with args",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "tracklab.main",
+      "args": ["-cn", "soccernet"],
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    }
+  ]
+}

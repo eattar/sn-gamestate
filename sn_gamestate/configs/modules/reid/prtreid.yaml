@@ -62,25 +62,25 @@ cfg:
         preprocess: "id"
 
   loss:
-    name: 'part_based'
+    name: "part_based"
     part_based:
-      name: 'part_averaged_triplet_loss'
-      ppl: 'cl'
+      name: "part_averaged_triplet_loss"
+      ppl: "cl"
       weights:
         globl:
-          id: 1.
-          tr: 1.
+          id: 1.0
+          tr: 0.0
         foreg:
-          id: 0.
-          tr: 0.
+          id: 1.0
+          tr: 0.0
         conct:
-          id: 0.
-          tr: 0.
+          id: 1.0
+          tr: 0.0
         parts:
-          id: 0.
-          tr: 0.
+          id: 0.0
+          tr: 1.0
         pixls:
-          ce: 0.
+          ce: 0.35
 
   train:
     batch_size: 64

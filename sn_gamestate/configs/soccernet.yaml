@@ -42,7 +42,7 @@ experiment_name: "sn-gamestate"
 
 # Path definitions
 home_dir: "${oc.env:HOME}"
-data_dir: "/netscratch/$USER/ds/SoccerNet/2024/data"
+data_dir: "/netscratch/$NAME/ds/SoccerNet/2024/data"
 model_dir: "${project_dir}/pretrained_models"
 
 # Machine configuration
@@ -92,6 +92,6 @@ hydra:
   job:
     chdir: True
   run:
-    dir: "/netscratch/$USER/SoccerNet/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    dir: "/netscratch/$NAME/SoccerNet/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
   sweep:
     dir: "multirun_outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"

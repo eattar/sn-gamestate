@@ -60,8 +60,8 @@ modules: # Allows module-specific batch_size and other configuration
   jersey_number_detect: {batch_size: 8}
 
 # Flags
-test_tracking: True
-eval_tracking: True
+test_tracking: False
+eval_tracking: False
 print_config: False
 
 # Dataset

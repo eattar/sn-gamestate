@@ -3,7 +3,7 @@ _target_: sn_gamestate.reid.prtreid_api.PRTReId
 defaults:
   - dataset: prtreid_dataset
 
-batch_size: 32
+batch_size: 64
 job_id: "${oc.env:SLURM_JOBID,0}" # TODO
 save_path: reid
 use_keypoints_visibility_scores_for_reid: False
@@ -83,7 +83,7 @@ cfg:
           ce: 0.
 
   train:
-    batch_size: 32
+    batch_size: 64
     max_epoch: 20
 
   test:

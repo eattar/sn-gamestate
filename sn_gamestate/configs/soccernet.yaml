@@ -42,7 +42,7 @@ experiment_name: "sn-gamestate"
 
 # Path definitions
 home_dir: "${oc.env:HOME}"
-data_dir: "/netscratch/$USER/ds/SoccerNet/2024/data"
+data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
 model_dir: "${project_dir}/pretrained_models"
 
 # Machine configuration
@@ -60,8 +60,8 @@ modules: # Allows module-specific batch_size and other configuration
   jersey_number_detect: {batch_size: 8}
 
 # Flags
-test_tracking: True
-eval_tracking: True
+test_tracking: False
+eval_tracking: False
 print_config: False
 
 # Dataset
@@ -92,6 +92,6 @@ hydra:
   job:
     chdir: True
   run:
-    dir: "/netscratch/$USER/SoccerNet/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    dir: "/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
   sweep:
     dir: "multirun_outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"

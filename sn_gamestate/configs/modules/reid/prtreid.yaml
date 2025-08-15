@@ -11,11 +11,11 @@ training_enabled: True
 cfg:
   project:
     name: "TrackLab"
-    experiment_name: ""
+    experiment_name: "hrnet32"
     notes: ""
     tags: []
     logger:
-      use_tensorboard: False
+      use_tensorboard: True
       use_wandb: False
   data:
     root: "${data_dir}/reid"

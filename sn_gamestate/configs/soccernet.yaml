@@ -46,7 +46,7 @@ data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
 model_dir: "${project_dir}/pretrained_models"
 
 # Machine configuration
-num_cores: 6
+num_cores: 1
 use_wandb: False
 use_rich: True
 
@@ -60,9 +60,9 @@ modules: # Allows module-specific batch_size and other configuration
   jersey_number_detect: {batch_size: 8}
 
 # Flags
-test_tracking: False
-eval_tracking: False
-print_config: False
+test_tracking: True
+eval_tracking: True
+print_config: True
 
 # Dataset
 dataset:
@@ -92,6 +92,6 @@ hydra:
   job:
     chdir: True
   run:
-    dir: "/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    dir: "/netscratch/eattar/SoccerNet/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
   sweep:
     dir: "multirun_outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"

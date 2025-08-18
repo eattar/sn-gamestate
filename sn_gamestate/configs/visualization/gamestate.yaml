@@ -2,7 +2,7 @@ defaults:
   - colors_gs # For more specific color tuning
 
 _target_: tracklab.visualization.VisualizationEngine
-save_videos: True
+save_videos: False
 
 visualizers:
   # Available Visualizers:

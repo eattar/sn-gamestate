@@ -7,7 +7,7 @@ batch_size: 64
 job_id: "${oc.env:SLURM_JOBID,0}" # TODO
 save_path: reid
 use_keypoints_visibility_scores_for_reid: False
-training_enabled: True
+training_enabled: False
 cfg:
   project:
     name: "TrackLab"
@@ -16,7 +16,7 @@ cfg:
     tags: []
     logger:
       use_tensorboard: True
-      use_wandb: False
+      use_wandb: True
   data:
     root: "${data_dir}/reid"
     type: "image"
@@ -36,10 +36,10 @@ cfg:
 
   model:
     name: "bpbreid"
-    pretrained: False
+    pretrained: True
     save_model_flag: True
     load_config: True
-    load_weights: ""
+    load_weights: "${model_dir}/reid/prtreid-soccernet-baseline.pth.tar"
     bpbreid:
       pooling: "gwap" # ['gap', 'gmp', 'gwap', 'gwap2']
       normalization: "identity" # 'batch_norm_2d' 'identity'
@@ -87,7 +87,7 @@ cfg:
     max_epoch: 80
 
   test:
-    evaluate: False
+    evaluate: True
 #    evaluate: False
     detailed_ranking: False
     start_eval: 10
@@ -95,7 +95,7 @@ cfg:
     batch_size_pairwise_dist_matrix: 5000
     normalize_feature: True
     dist_metric: "euclidean" # ['euclidean', 'cosine']
-    visrank: True
+    visrank: False
     visrank_per_body_part: False
     vis_embedding_projection: False
     vis_feature_maps: False

@@ -1,0 +1,7 @@
+_target_: sn_gamestate.modules.unified_st.UnifiedSTModule
+image_width: 1920
+image_height: 1080
+batch_size: 1
+device: cuda
+T: 5
+with_distortion: true

@@ -1,0 +1,19 @@
+_target_: sn_gamestate.calibration.unified_backbone.UnifiedBackboneModule
+
+# Model configuration
+backbone_type: "resnet50"  # Options: "resnet50", "efficientnet"
+temporal_frames: 5  # Number of temporal frames to process
+use_attention: true  # Whether to use attention mechanisms
+
+# Thresholds
+detection_threshold: 0.5  # Confidence threshold for detections
+pitch_threshold: 0.3     # Confidence threshold for pitch detection
+
+# Model path (optional - for pretrained weights)
+model_path: null
+
+# Device configuration
+device: "cuda"  # or "cpu"
+
+# Batch size
+batch_size: 1

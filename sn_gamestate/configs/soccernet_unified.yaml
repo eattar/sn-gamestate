@@ -1,0 +1,130 @@
+# TrackLab SoccerNet config with Unified Spatio-Temporal Backbone
+
+# The defaults list contains the files that will be used
+# to create the final config file. This item *must* be
+# the first element in the file.
+# Detailed configs for each default component below are located in "sn-gamestate/sn-gamestate/configs" and "tracklab/tracklab/configs"
+
+# NEW: Using unified backbone instead of separate modules
+defaults:
+  - dataset: soccernet_gs
+  - eval: gs_hota
+  - engine: offline
+  - visualization: gamestate  # Save tracking results as a .mp4 video in the run directory specified below (sn-gamestate/outputs/...)
+  
+  # REPLACED: Unified backbone instead of separate modules
+  - modules/unified_backbone: unified_backbone
+  
+  # KEPT: Other modules remain the same
+  - modules/reid: prtreid
+  - modules/track: bpbreid_strong_sort
+  - modules/jersey_number_detect: mmocr
+  - modules/team: kmeans_embeddings
+  - modules/team_side: mean_position
+  - modules/tracklet_agg: voting_role_jn
+  
+  - _self_
+
+# Pipeline definition with unified backbone:
+# - The unified backbone handles detection, pitch detection, and calibration jointly
+# - This replaces the previous pipeline: bbox_detector -> pitch -> calibration
+pipeline:
+  - unified_backbone  # NEW: Single module for detection + pitch + calibration
+  - reid
+  - track
+  - jersey_number_detect
+  - tracklet_agg
+  - team
+  - team_side
+
+# Experiment name
+experiment_name: "sn-gamestate-unified-backbone"
+
+# Path definitions
+home_dir: "${oc.env:HOME}"
+data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
+model_dir: "${project_dir}/pretrained_models"
+
+# Machine configuration
+num_cores: 1
+use_wandb: True
+use_rich: True
+
+modules: # Allows module-specific batch_size and other configuration
+  # NEW: Unified backbone configuration
+  unified_backbone: 
+    batch_size: 1
+    backbone_type: "resnet50"
+    temporal_frames: 5
+    use_attention: true
+    detection_threshold: 0.5
+    pitch_threshold: 0.3
+  
+  # KEPT: Other module configurations
+  pose_bottomup: {batch_size: 8}
+  reid: {batch_size: 64}
+  track: {batch_size: 64}
+  jersey_number_detect: {batch_size: 8}
+
+# Flags
+test_tracking: True
+eval_tracking: True
+print_config: True
+
+# Dataset
+dataset:
+  name: "soccernet_gs"
+  split: "test"
+  version: "2024"
+  root_dir: "${data_dir}"
+  download: True
+
+# Engine configuration
+engine:
+  name: "offline"
+  max_frames: null  # Process all frames
+  start_frame: 0
+  end_frame: null
+
+# Evaluation configuration
+eval:
+  metrics: ["hota", "clearmot", "identity"]
+  save_predictions: True
+  save_visualizations: True
+
+# Visualization configuration
+visualization:
+  save_videos: True  # Save a .mp4 video on disk with the game state reconstruction output
+  save_images: False
+  save_trajectories: True
+  save_heatmaps: False
+
+# Output configuration
+output_dir: "outputs"
+save_tracker_state: True  # Save tracking results to a .pcklz file to save computation time on the next run
+
+# NEW: Unified backbone specific configurations
+unified_backbone:
+  # Model architecture
+  backbone_type: "resnet50"  # Options: "resnet50", "efficientnet"
+  temporal_frames: 5          # Number of temporal frames for spatio-temporal modeling
+  use_attention: true         # Whether to use attention mechanisms
+  
+  # Detection settings
+  detection_threshold: 0.5    # Confidence threshold for person detection
+  num_detection_classes: 1    # Person class only
+  
+  # Pitch detection settings
+  pitch_threshold: 0.3        # Confidence threshold for pitch line detection
+  num_pitch_classes: 29       # Number of pitch line classes
+  
+  # Calibration settings
+  calibration_loss_weight: 1.0  # Weight for calibration loss in multi-task learning
+  
+  # Training/testing settings
+  pretrained: true            # Use ImageNet pretrained weights
+  freeze_backbone: false      # Whether to freeze the backbone during fine-tuning
+  
+  # Performance optimization
+  use_amp: true               # Use automatic mixed precision
+  optimize_memory: true       # Enable memory optimization techniques

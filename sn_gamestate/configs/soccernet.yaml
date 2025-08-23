@@ -10,35 +10,34 @@ defaults:
   - eval: gs_hota
   - engine: offline
   - visualization: gamestate  # Save tracking results as a .mp4 video in the run directory specified below (sn-gamestate/outputs/...)
-  - modules/bbox_detector: yolo_ultralytics
+  
+  # NEW: Unified backbone replaces separate modules
+  - modules/unified_backbone: unified_backbone
+  
+  # KEPT: Other modules remain the same
   - modules/reid: prtreid
   - modules/track: bpbreid_strong_sort
   - modules/jersey_number_detect: mmocr
   - modules/team: kmeans_embeddings
   - modules/team_side: mean_position
   - modules/tracklet_agg: voting_role_jn
-  - modules/pitch : nbjw_calib
-  - modules/calibration: nbjw_calib
+  
   - _self_
 
-# Pipeline definition :
-# - Defines the order in which the modules will be called
-# - If loading a tracking state from disk, remove modules whose outputs are already provided in the loaded state
-# Use 'pipeline: []' for an empty pipeline (e.g. when loading all tracking results from a saved .pklz tracker state)
+# Pipeline definition with unified backbone:
+# - The unified backbone handles detection, pitch detection, and calibration jointly
+# - This replaces the previous pipeline: bbox_detector -> pitch -> calibration
 pipeline:
-  - bbox_detector
+  - unified_backbone  # NEW: Single module for detection + pitch + calibration
   - reid
   - track
-  - pitch
-  - calibration
   - jersey_number_detect
   - tracklet_agg
   - team
   - team_side
 
-
 # Experiment name
-experiment_name: "sn-gamestate"
+experiment_name: "sn-gamestate-unified"
 
 # Path definitions
 home_dir: "${oc.env:HOME}"
@@ -51,12 +50,19 @@ use_wandb: True
 use_rich: True
 
 modules: # Allows module-specific batch_size and other configuration
-  bbox_detector: {batch_size: 8}
+  # NEW: Unified backbone configuration
+  unified_backbone: 
+    batch_size: 1
+    backbone_type: "resnet50"
+    temporal_frames: 5
+    use_attention: true
+    detection_threshold: 0.5
+    pitch_threshold: 0.3
+  
+  # KEPT: Other module configurations
   pose_bottomup: {batch_size: 8}
   reid: {batch_size: 64}
   track: {batch_size: 64}
-  pitch: {batch_size: 1}
-  calibration: {batch_size: 1}
   jersey_number_detect: {batch_size: 8}
 
 # Flags

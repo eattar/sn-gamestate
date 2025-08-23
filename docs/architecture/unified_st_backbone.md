@@ -1,7 +1,5 @@
 # Unified Spatio-Temporal Backbone (UnifiedST)
 
-*Ready for iterative development and incremental integration*
-
 Goal: Replace YOLOv8 + TVCalib with a single shared encoder that jointly predicts:
 - Player/ball detections
 - Pitch structure (lines/points) for supervision and visualization

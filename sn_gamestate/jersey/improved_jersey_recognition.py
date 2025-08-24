@@ -29,7 +29,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
 
     def __init__(self, batch_size, device, tracking_dataset=None, 
                  sequence_length=5, min_confidence_threshold=0.3,
-                 temporal_weight=0.7, spatial_weight=0.3):
+                 temporal_weight=0.7, spatial_weight=0.3,
+                 use_confidence_boost=True, min_sequence_confidence=0.4):
         
         super().__init__(batch_size=batch_size)
         self.device = device
@@ -38,6 +39,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         self.min_confidence_threshold = min_confidence_threshold
         self.temporal_weight = temporal_weight
         self.spatial_weight = spatial_weight
+        self.use_confidence_boost = use_confidence_boost
+        self.min_sequence_confidence = min_sequence_confidence
         
         # Debug logging to verify parameters
         log.info(f"ImprovedJerseyRecognition initialized with:")
@@ -45,6 +48,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - min_confidence_threshold: {self.min_confidence_threshold}")
         log.info(f"  - temporal_weight: {self.temporal_weight}")
         log.info(f"  - spatial_weight: {self.spatial_weight}")
+        log.info(f"  - use_confidence_boost: {self.use_confidence_boost}")
+        log.info(f"  - min_sequence_confidence: {self.min_sequence_confidence}")
         log.info(f"  - device: {self.device}")
         log.info(f"  - batch_size: {self.batch_size}")
         
@@ -152,7 +157,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         return pred_results
 
     def aggregate_tracklet_sequence(self, track_id: int, jersey_numbers: List, confidences: List, frame_indices: List) -> Tuple[Optional[str], float]:
-        """Aggregate jersey numbers over tracklet sequence using temporal consistency"""
+        """Advanced temporal aggregation with confidence boosting and fallback strategies"""
         if not jersey_numbers or all(jn is None for jn in jersey_numbers):
             return None, 0.0
         
@@ -161,9 +166,15 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                            if jn is not None and conf >= self.min_confidence_threshold]
         
         if not valid_detections:
-            return None, 0.0
+            # Fallback: try with even lower threshold
+            fallback_detections = [(jn, conf, idx) for jn, conf, idx in zip(jersey_numbers, confidences, frame_indices) 
+                                 if jn is not None and conf >= 0.1]
+            if fallback_detections:
+                valid_detections = fallback_detections
+            else:
+                return None, 0.0
         
-        # Group by jersey number
+        # Group by jersey number with frequency analysis
         jn_groups = defaultdict(list)
         for jn, conf, idx in valid_detections:
             jn_groups[jn].append((conf, idx))
@@ -172,28 +183,81 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         best_jn = max(jn_groups.keys(), key=lambda x: len(jn_groups[x]))
         best_detections = jn_groups[best_jn]
         
-        # Calculate temporal consistency score
+        # Calculate temporal consistency score (frequency-based)
         temporal_score = len(best_detections) / len(jersey_numbers)
         
-        # Calculate average confidence for the best jersey number
+        # Calculate confidence metrics
         avg_confidence = np.mean([conf for conf, _ in best_detections])
+        max_confidence = max([conf for conf, _ in best_detections])
         
-        # Combine temporal consistency and confidence
-        final_confidence = (self.temporal_weight * temporal_score + 
-                          self.spatial_weight * avg_confidence)
+        # Confidence boosting for consistent detections
+        if self.use_confidence_boost and temporal_score >= 0.6:
+            # Boost confidence for highly consistent detections
+            consistency_boost = min(0.2, temporal_score - 0.5)  # Max 0.2 boost
+            boosted_confidence = min(1.0, avg_confidence + consistency_boost)
+        else:
+            boosted_confidence = avg_confidence
+        
+        # Calculate sequence quality score
+        sequence_quality = self._calculate_sequence_quality(jersey_numbers, confidences, frame_indices)
+        
+        # Combine all factors for final confidence
+        final_confidence = (
+            self.temporal_weight * temporal_score + 
+            self.spatial_weight * boosted_confidence +
+            0.1 * sequence_quality  # Small weight for sequence quality
+        )
+        
+        # Apply minimum sequence confidence threshold
+        if final_confidence < self.min_sequence_confidence:
+            # Fallback to best single detection
+            best_single = max(valid_detections, key=lambda x: x[1])
+            return best_single[0], best_single[1]
+        
+        # Ensure confidence is in valid range
+        final_confidence = np.clip(final_confidence, 0.0, 1.0)
         
         log.info(f"Tracklet {track_id} aggregation:")
         log.info(f"  - Jersey numbers: {jersey_numbers}")
         log.info(f"  - Confidences: {confidences}")
         log.info(f"  - Frame indices: {frame_indices}")
         log.info(f"  - Best jersey number: {best_jn}")
+        log.info(f"  - Temporal score: {temporal_score:.3f}")
+        log.info(f"  - Avg confidence: {avg_confidence:.3f}")
+        log.info(f"  - Boosted confidence: {boosted_confidence:.3f}")
+        log.info(f"  - Sequence quality: {sequence_quality:.3f}")
         log.info(f"  - Final confidence: {final_confidence:.3f}")
         
         return best_jn, final_confidence
+    
+    def _calculate_sequence_quality(self, jersey_numbers: List, confidences: List, frame_indices: List) -> float:
+        """Calculate sequence quality based on consistency and confidence patterns"""
+        if len(jersey_numbers) < 2:
+            return 0.0
+        
+        # Calculate confidence stability (lower variance = higher quality)
+        valid_confidences = [conf for conf in confidences if conf > 0]
+        if len(valid_confidences) < 2:
+            return 0.0
+        
+        confidence_variance = np.var(valid_confidences)
+        confidence_stability = max(0, 1.0 - confidence_variance)
+        
+        # Calculate frame spacing consistency
+        frame_spacings = [frame_indices[i+1] - frame_indices[i] for i in range(len(frame_indices)-1)]
+        if frame_spacings:
+            spacing_variance = np.var(frame_spacings)
+            spacing_consistency = max(0, 1.0 - spacing_variance / 10.0)  # Normalize
+        else:
+            spacing_consistency = 1.0
+        
+        # Overall sequence quality
+        sequence_quality = (confidence_stability * 0.7 + spacing_consistency * 0.3)
+        return sequence_quality
 
     @torch.no_grad()
     def process(self, batch, detections: pd.DataFrame, metadatas: pd.DataFrame):
-        """Process batch with temporal aggregation"""
+        """Process batch with improved temporal aggregation and fallback strategies"""
         jersey_number_detection = []
         jersey_number_confidence = []
         
@@ -232,6 +296,12 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                         track_id, jersey_numbers, confidences, frame_indices
                     )
                     
+                    # Apply post-processing confidence boost for very consistent detections
+                    if final_jn is not None and final_conf > 0:
+                        consistency_count = jersey_numbers.count(final_jn)
+                        if consistency_count >= len(jersey_numbers) * 0.8:  # 80% consistency
+                            final_conf = min(1.0, final_conf * 1.1)  # 10% boost
+                    
                     jersey_number_detection.append(final_jn)
                     jersey_number_confidence.append(final_conf)
                     
@@ -246,6 +316,9 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                 # No track_id, use frame-level prediction
                 jersey_number_detection.append(jn)
                 jersey_number_confidence.append(conf)
+        
+        # Post-process results: apply confidence smoothing
+        jersey_number_confidence = self._apply_confidence_smoothing(jersey_number_confidence)
         
         # Set outputs
         detections['jersey_number_detection'] = jersey_number_detection
@@ -270,3 +343,22 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         detections['role'] = roles
         
         return detections
+    
+    def _apply_confidence_smoothing(self, confidences: List[float]) -> List[float]:
+        """Apply confidence smoothing to reduce noise and improve stability"""
+        if len(confidences) < 3:
+            return confidences
+        
+        smoothed = []
+        for i in range(len(confidences)):
+            if i == 0:
+                # First element: average with next
+                smoothed.append((confidences[i] + confidences[i+1]) / 2)
+            elif i == len(confidences) - 1:
+                # Last element: average with previous
+                smoothed.append((confidences[i] + confidences[i-1]) / 2)
+            else:
+                # Middle elements: 3-point average
+                smoothed.append((confidences[i-1] + confidences[i] + confidences[i+1]) / 3)
+        
+        return smoothed

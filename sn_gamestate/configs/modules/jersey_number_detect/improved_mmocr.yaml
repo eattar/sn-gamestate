@@ -1,6 +1,8 @@
 _target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
-batch_size: 16  # Increased for better GPU utilization
-sequence_length: 2  # Minimal sequence length for speed
-min_confidence_threshold: 0.5  # Higher threshold = fewer detections to process
-temporal_weight: 0.5  # Simplified weighting
-spatial_weight: 0.5  # Simplified weighting
+batch_size: 16  # Good for GPU utilization
+sequence_length: 4  # Increased for better temporal consistency
+min_confidence_threshold: 0.3  # Lower threshold to catch more valid detections
+temporal_weight: 0.7  # Higher weight for temporal consistency
+spatial_weight: 0.3   # Lower weight for spatial factors
+use_confidence_boost: true  # Enable confidence boosting for consistent detections
+min_sequence_confidence: 0.4  # Minimum confidence for sequence aggregation

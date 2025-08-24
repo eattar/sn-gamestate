@@ -187,6 +187,7 @@ class UnifiedBackboneModule(DetectionLevelModule):
                  batch_size: int = 1,
                  device: str = "cuda",
                  **kwargs):
+        print(f"DEBUG: UnifiedBackboneModule.__init__() called with kwargs: {kwargs}")
         super().__init__(batch_size=batch_size)
         
         self.backbone_type = backbone_type

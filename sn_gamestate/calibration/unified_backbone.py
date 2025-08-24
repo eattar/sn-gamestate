@@ -245,8 +245,14 @@ class UnifiedBackboneModule(DetectionLevelModule):
     
     def process(self, batch: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
         """
-        Process batch through the unified backbone and return detection and calibration outputs.
+        Process batch through the unified backbone and return detection outputs.
         """
+        print(f"DEBUG: UnifiedBackboneModule.process() called!")
+        print(f"DEBUG: batch shape: {batch.shape}")
+        print(f"DEBUG: metadatas shape: {metadatas.shape}")
+        print(f"DEBUG: metadatas columns: {metadatas.columns.tolist()}")
+        print(f"DEBUG: metadatas index: {metadatas.index.tolist()}")
+        
         # Ensure batch has the correct shape for temporal processing
         print(f"DEBUG: Original batch shape: {batch.shape}")
         

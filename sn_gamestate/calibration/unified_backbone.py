@@ -187,7 +187,7 @@ class UnifiedBackboneModule(ImageLevelModule):
     
     input_columns = []
     output_columns = {
-        "detection": ["bbox_ltwh", "confidence"],
+        "detection": ["bbox_ltwh", "confidence", "bbox_pitch"],
         "pitch": ["lines", "keypoints"],
         "image": ["parameters"]
     }
@@ -293,13 +293,35 @@ class UnifiedBackboneModule(ImageLevelModule):
         # Find detections above threshold
         valid_detections = confidence > self.detection_threshold
         
-        # Convert to detection format
-        # This is a simplified version - in practice, you'd want to implement
-        # proper anchor-based detection or use a more sophisticated approach
+        # For now, create a simplified detection DataFrame
+        # In practice, you'd implement proper anchor-based detection
+        detection_data = []
         
-        # For now, return empty DataFrame - this would need to be implemented
-        # based on your specific detection format requirements
-        return pd.DataFrame(columns=["bbox_ltwh", "confidence"])
+        # Create dummy detections for testing
+        # This should be replaced with actual detection logic
+        for i in range(len(detections)):
+            # Create dummy bbox_ltwh (left, top, width, height)
+            bbox_ltwh = [100, 100, 50, 100]  # Dummy values
+            conf = 0.8  # Dummy confidence
+            
+            # Create dummy bbox_pitch using the existing function
+            # For now, create a simple structure that matches expected format
+            bbox_pitch = {
+                "x_bottom_left": 0.0,
+                "y_bottom_left": 0.0,
+                "x_bottom_right": 10.0,
+                "y_bottom_right": 0.0,
+                "x_bottom_middle": 5.0,
+                "y_bottom_middle": 0.0
+            }
+            
+            detection_data.append({
+                "bbox_ltwh": bbox_ltwh,
+                "confidence": conf,
+                "bbox_pitch": bbox_pitch
+            })
+        
+        return pd.DataFrame(detection_data)
     
     def _process_pitch(self, pitch_output: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
         """
@@ -313,11 +335,21 @@ class UnifiedBackboneModule(ImageLevelModule):
         # Get predicted classes
         predicted_classes = torch.argmax(pitch_probs, dim=1)
         
-        # Extract keypoints for lines (simplified)
+        # For now, create dummy pitch data for testing
         # In practice, you'd implement proper keypoint extraction from the heatmaps
+        pitch_data = []
         
-        # For now, return empty DataFrame
-        return pd.DataFrame(columns=["lines", "keypoints"])
+        for i in range(len(metadatas)):
+            # Create dummy lines and keypoints
+            lines = []  # Dummy line data
+            keypoints = []  # Dummy keypoint data
+            
+            pitch_data.append({
+                "lines": lines,
+                "keypoints": keypoints
+            })
+        
+        return pd.DataFrame(pitch_data, index=metadatas.index)
     
     def _process_calibration(self, calibration_output: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
         """

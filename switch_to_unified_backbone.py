@@ -45,7 +45,7 @@ def switch_to_unified_backbone():
     if unified_config.exists():
         shutil.copy2(unified_config, target_config)
         print(f"✅ Switched to unified backbone configuration")
-        print(f"   You can now run: tracklab -cn soccernet")
+        print(f"   You can now run: uv run tracklab -cn soccernet")
         return True
     else:
         print(f"❌ Unified backbone config not found at: {unified_config}")
@@ -59,7 +59,7 @@ def switch_to_separate_modules():
     if separate_config.exists():
         shutil.copy2(separate_config, target_config)
         print(f"✅ Switched to separate modules configuration")
-        print(f"   You can now run: tracklab -cn soccernet")
+        print(f"   You can now run: uv run tracklab -cn soccernet")
         return True
     else:
         print(f"❌ Separate modules config not found at: {separate_config}")

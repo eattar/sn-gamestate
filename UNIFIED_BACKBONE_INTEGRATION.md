@@ -60,7 +60,7 @@ python switch_to_unified_backbone.py
 
 # Choose option 1 to switch to unified backbone
 # Then run your normal command
-tracklab -cn soccernet
+uv run tracklab -cn soccernet
 ```
 
 ### Option 2: Manual Configuration
@@ -77,7 +77,7 @@ tracklab -cn soccernet
 
 3. **Run normally:**
    ```bash
-   tracklab -cn soccernet
+   uv run tracklab -cn soccernet
    ```
 
 ### Option 3: Use Alternative Config
@@ -85,12 +85,12 @@ tracklab -cn soccernet
 Use the unified configuration directly:
 
 ```bash
-tracklab -cn soccernet_unified
+uv run tracklab -cn soccernet_unified
 ```
 
 ## Benefits
 
-- **Same Command**: Still use `tracklab -cn soccernet`
+- **Same Command**: Still use `uv run tracklab -cn soccernet`
 - **Better Performance**: ~1.9x faster inference
 - **Less Memory**: ~33% reduction in memory usage
 - **Same Output**: Compatible with existing pipeline
@@ -133,7 +133,7 @@ Test the unified backbone:
 python -m pytest sn_gamestate/tests/test_unified_backbone.py -v
 
 # Test with small dataset
-tracklab -cn soccernet dataset.nvid=1
+uv run tracklab -cn soccernet dataset.nvid=1
 ```
 
 ## Troubleshooting
@@ -143,13 +143,13 @@ tracklab -cn soccernet dataset.nvid=1
 1. **CUDA Out of Memory**
    ```bash
    # Reduce batch size or temporal frames
-   tracklab -cn soccernet modules.unified_backbone.batch_size=1 modules.unified_backbone.temporal_frames=3
+   uv run tracklab -cn soccernet modules.unified_backbone.batch_size=1 modules.unified_backbone.temporal_frames=3
    ```
 
 2. **Slow Performance**
    ```bash
    # Use EfficientNet backbone
-   tracklab -cn soccernet modules.unified_backbone.backbone_type=efficientnet
+   uv run tracklab -cn soccernet modules.unified_backbone.backbone_type=efficientnet
    ```
 
 3. **Configuration Errors**
@@ -178,7 +178,7 @@ sn_gamestate/
 
 The unified backbone integration:
 - ✅ **Keeps your existing pipeline structure**
-- ✅ **Uses the same command**: `tracklab -cn soccernet`
+- ✅ **Uses the same command**: `uv run tracklab -cn soccernet`
 - ✅ **Improves performance** significantly
 - ✅ **Easy to switch** between approaches
 - ✅ **Easy to rollback** if needed

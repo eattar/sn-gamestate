@@ -66,10 +66,10 @@ git clone <your-repo-url>
 cd sn-gamestate
 
 # Install dependencies
-pip install -r requirements.txt
+uv sync
 
 # Install the package in development mode
-pip install -e .
+uv pip install -e .
 ```
 
 ## Usage
@@ -104,10 +104,10 @@ modules:
 
 ```bash
 # Using the unified backbone configuration
-tracklab -cn soccernet_unified
+uv run tracklab -cn soccernet
 
 # Or with custom parameters
-tracklab -cn soccernet_unified modules.unified_backbone.backbone_type=efficientnet
+uv run tracklab -cn soccernet modules.unified_backbone.backbone_type=efficientnet
 ```
 
 ### 3. Training the Model
@@ -266,7 +266,7 @@ dataset/
 export LOG_LEVEL=DEBUG
 
 # Run with verbose output
-tracklab -cn soccernet_unified --verbose
+uv run tracklab -cn soccernet --verbose
 ```
 
 ## Future Enhancements
@@ -287,11 +287,11 @@ tracklab -cn soccernet_unified --verbose
 ### Development Setup
 ```bash
 # Create development environment
-conda create -n sn-gamestate-dev python=3.9
-conda activate sn-gamestate-dev
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install development dependencies
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 
 # Run tests
 pytest tests/

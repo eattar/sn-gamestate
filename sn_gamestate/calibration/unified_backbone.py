@@ -187,6 +187,7 @@ class UnifiedBackboneModule(DetectionLevelModule):
                  batch_size: int = 1,
                  device: str = "cuda",
                  **kwargs):
+        print(f"DEBUG: UnifiedBackboneModule.__init__() called!")
         print(f"DEBUG: UnifiedBackboneModule.__init__() called with kwargs: {kwargs}")
         super().__init__(batch_size=batch_size)
         
@@ -219,6 +220,11 @@ class UnifiedBackboneModule(DetectionLevelModule):
         """
         Preprocess image for the unified backbone.
         """
+        print(f"DEBUG: UnifiedBackboneModule.preprocess() called!")
+        print(f"DEBUG: image shape: {image.shape}")
+        print(f"DEBUG: metadata type: {type(metadata)}")
+        print(f"DEBUG: metadata content: {metadata}")
+        
         # Convert BGR to RGB if needed
         if image.shape[2] == 3:
             image = image[:, :, ::-1]  # BGR to RGB

@@ -1,6 +1,7 @@
 import pandas as pd
 import torch
 import numpy as np
+from mmocr.apis import MMOCRInferencer
 from mmocr.apis import TextDetInferencer, TextRecInferencer
 from mmocr.utils import bbox2poly, crop_img, poly2bbox
 import logging
@@ -23,12 +24,13 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
     jersey number recognition accuracy and confidence.
     """
     input_columns = ["bbox_ltwh"]  # Only require bbox_ltwh like working version
-    output_columns = ["jersey_number_detection", "jersey_number_confidence"]
+    output_columns = ["jersey_number_detection", "jersey_number_confidence", "role_detection", "role"]
     collate_fn = default_collate
 
     def __init__(self, batch_size, device, tracking_dataset=None, 
                  sequence_length=5, min_confidence_threshold=0.3,
                  temporal_weight=0.7, spatial_weight=0.3):
+        
         super().__init__(batch_size=batch_size)
         self.device = device
         self.batch_size = batch_size
@@ -46,469 +48,225 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - device: {self.device}")
         log.info(f"  - batch_size: {self.batch_size}")
         
-        # Initialize MMOCR models - match working version exactly
-        try:
-            from mmocr.apis import MMOCRInferencer
-            log.info("Loading MMOCRInferencer...")
-            # Don't pass device to MMOCRInferencer like working version
-            self.ocr = MMOCRInferencer(det='dbnet_resnet18_fpnc_1200e_icdar2015', rec='SAR')
-            self.use_mmocr_inferencer = True
-            log.info("MMOCRInferencer loaded successfully")
-        except Exception as e:
-            log.warning(f"Failed to load MMOCRInferencer: {e}, falling back to separate inferencers")
-            self.use_mmocr_inferencer = False
+        # Initialize MMOCR models - EXACTLY like working baseline
+        log.info("Loading MMOCRInferencer...")
+        self.ocr = MMOCRInferencer(det='dbnet_resnet18_fpnc_1200e_icdar2015', rec='SAR')
         
-        # Always create separate inferencers like working version
         log.info("Loading MMOCR text detection model...")
         self.textdetinferencer = TextDetInferencer(
             'dbnet_resnet18_fpnc_1200e_icdar2015', device=device)
         log.info("Loading MMOCR text recognition model...")
         self.textrecinferencer = TextRecInferencer('SAR', device=device)
-        log.info("MMOCR models loaded successfully")
         
-        # Tracklet sequence storage
+        # Tracklet sequence storage for temporal aggregation
         self.tracklet_sequences = defaultdict(list)
-        self.tracklet_jersey_history = defaultdict(list)
         
-    def no_jersey_number(self):
-        return None, 0.0
+        log.info("ImprovedJerseyRecognition initialization complete")
 
-    def extract_numbers(self, text: str) -> Optional[str]:
-        """Extract numeric characters from text."""
-        log.info(f"extract_numbers called with text: '{text}' (type: {type(text)})")
+    def no_jersey_number(self):
+        return None, 0
+
+    def extract_numbers(self, text):
+        """Extract numbers from text - EXACTLY like working baseline"""
         number = ''
         for char in text:
-            log.info(f"  Processing char: '{char}' (isdigit: {char.isdigit()})")
             if char.isdigit():
                 number += char
-        result = number if number != '' else None
-        log.info(f"  Final result: '{result}'")
-        return result
+        return number if number != '' else None
 
-    def validate_jersey_number(self, number: str) -> bool:
-        """Validate if the extracted number is a valid jersey number."""
-        if not number:
-            return False
-        # Jersey numbers are typically 1-99
-        try:
-            num = int(number)
-            return 1 <= num <= 99
-        except ValueError:
-            return False
-
-    def compute_temporal_consistency(self, jersey_numbers: List[str], 
-                                   confidences: List[float]) -> float:
-        """Compute temporal consistency score for a sequence of jersey numbers."""
-        if not jersey_numbers:
-            return 0.0
-        
-        # Count unique jersey numbers
-        unique_numbers = set(jersey_numbers)
-        if len(unique_numbers) == 1:
-            # Perfect consistency
-            return 1.0
-        elif len(unique_numbers) == 2:
-            # Check if one number appears much more frequently
-            counts = {}
-            for num in jersey_numbers:
-                counts[num] = counts.get(num, 0) + 1
-            
-            max_count = max(counts.values())
-            total_count = len(jersey_numbers)
-            consistency = max_count / total_count
-            return consistency
+    def choose_best_jersey_number(self, jersey_numbers, jn_confidences):
+        """Choose best jersey number - EXACTLY like working baseline"""
+        if len(jersey_numbers) == 0:
+            return self.no_jersey_number()
         else:
-            # Low consistency
-            return 0.2
+            jn_confidences = np.array(jn_confidences)
+            idx_sort = np.argsort(jn_confidences)
+            return jersey_numbers[idx_sort[-1]], jn_confidences[idx_sort[-1]]
 
-    def compute_spatial_consistency(self, bboxes: List, confidences: List[float]) -> float:
-        """Compute spatial consistency based on bbox positions and confidences."""
-        if len(bboxes) < 2:
-            return 1.0
-        
-        # Compute variance in bbox positions (normalized)
-        centers = []
-        for bbox in bboxes:
-            if hasattr(bbox, 'center'):
-                centers.append(bbox.center)
-            else:
-                # Fallback for different bbox formats
-                centers.append((0, 0))  # Default center
-        
-        if len(centers) < 2:
-            return 1.0
-        
-        # Simple spatial consistency based on center positions
-        # Lower variance = higher consistency
-        center_array = np.array(centers)
-        variance = np.var(center_array, axis=0).sum()
-        # Normalize variance to [0, 1] range
-        spatial_consistency = max(0, 1 - variance / 1000)
-        return spatial_consistency
-
-    def aggregate_tracklet_jersey_simple(self, tracklet_id: int, 
-                                       jersey_numbers: List[str], 
-                                       confidences: List[float]) -> Tuple[str, float]:
-        """Simplified aggregation of jersey numbers across a tracklet sequence (no spatial analysis)."""
-        if not jersey_numbers:
-            return self.no_jersey_number()
-        
-        # Filter out low confidence detections
-        valid_indices = [i for i, conf in enumerate(confidences) 
-                        if conf >= self.min_confidence_threshold]
-        
-        if not valid_indices:
-            return self.no_jersey_number()
-        
-        filtered_numbers = [jersey_numbers[i] for i in valid_indices]
-        filtered_confidences = [confidences[i] for i in valid_indices]
-        
-        # Compute temporal consistency
-        temporal_consistency = self.compute_temporal_consistency(
-            filtered_numbers, filtered_confidences)
-        
-        # Find the most frequent jersey number
-        number_counts = defaultdict(int)
-        for num in filtered_numbers:
-            if self.validate_jersey_number(num):
-                number_counts[num] += 1
-        
-        if not number_counts:
-            return self.no_jersey_number()
-        
-        # Get the most frequent number
-        most_frequent_number = max(number_counts.items(), key=lambda x: x[1])[0]
-        
-        # Compute final confidence based on frequency and temporal consistency
-        frequency_score = number_counts[most_frequent_number] / len(filtered_numbers)
-        final_confidence = (frequency_score * 0.7 + temporal_consistency * 0.3)
-        
-        # Ensure confidence is in [0, 1] range
-        final_confidence = np.clip(final_confidence, 0.0, 1.0)
-        
-        return most_frequent_number, final_confidence
-
-    def aggregate_tracklet_jersey(self, tracklet_id: int, 
-                                jersey_numbers: List[str], 
-                                confidences: List[float],
-                                bboxes: List) -> Tuple[str, float]:
-        """Aggregate jersey numbers across a tracklet sequence."""
-        if not jersey_numbers:
-            return self.no_jersey_number()
-        
-        # Filter out low confidence detections
-        valid_indices = [i for i, conf in enumerate(confidences) 
-                        if conf >= self.min_confidence_threshold]
-        
-        if not valid_indices:
-            return self.no_jersey_number()
-        
-        filtered_numbers = [jersey_numbers[i] for i in valid_indices]
-        filtered_confidences = [confidences[i] for i in valid_indices]
-        filtered_bboxes = [bboxes[i] for i in valid_indices]
-        
-        # Compute consistency scores
-        temporal_consistency = self.compute_temporal_consistency(
-            filtered_numbers, filtered_confidences)
-        spatial_consistency = self.compute_spatial_consistency(
-            filtered_bboxes, filtered_confidences)
-        
-        # Weighted combination of consistency scores
-        overall_consistency = (self.temporal_weight * temporal_consistency + 
-                             self.spatial_weight * spatial_consistency)
-        
-        # Find the most frequent jersey number
-        number_counts = defaultdict(int)
-        for num in filtered_numbers:
-            if self.validate_jersey_number(num):
-                number_counts[num] += 1
-        
-        if not number_counts:
-            return self.no_jersey_number()
-        
-        # Get the most frequent number
-        most_frequent_number = max(number_counts.items(), key=lambda x: x[1])[0]
-        
-        # Compute final confidence based on frequency and consistency
-        frequency_score = number_counts[most_frequent_number] / len(filtered_numbers)
-        final_confidence = (frequency_score * 0.6 + overall_consistency * 0.4)
-        
-        # Ensure confidence is in [0, 1] range
-        final_confidence = np.clip(final_confidence, 0.0, 1.0)
-        
-        return most_frequent_number, final_confidence
+    def extract_jersey_numbers_from_ocr(self, prediction):
+        """Extract jersey numbers from OCR - EXACTLY like working baseline"""
+        jersey_numbers = []
+        jn_confidences = []
+        for txt, conf in zip(prediction['rec_texts'], prediction['rec_scores']):
+            jn = self.extract_numbers(txt)
+            if jn is not None:
+                jersey_numbers.append(jn)
+                jn_confidences.append(conf)
+        jersey_number, jn_confidence = self.choose_best_jersey_number(jersey_numbers, jn_confidences)
+        if jersey_number is not None:
+            jersey_number = jersey_number[:2]  # Only two-digit numbers are possible
+        return jersey_number, jn_confidence
 
     @torch.no_grad()
     def preprocess(self, image, detection: pd.Series, metadata: pd.Series):
-        """Preprocess detection for OCR."""
+        """Preprocess - EXACTLY like working baseline"""
         l, t, r, b = detection.bbox.ltrb(
             image_shape=(image.shape[1], image.shape[0]), rounded=True
         )
         crop = image[t:b, l:r]
-        
-        # Debug logging for image cropping
-        log.info(f"Original image shape: {image.shape}")
-        log.info(f"Crop coordinates: l={l}, t={t}, r={r}, b={b}")
-        log.info(f"Cropped image shape: {crop.shape}")
-        
         if crop.shape[0] == 0 or crop.shape[1] == 0:
-            log.warning(f"Empty crop detected, using fallback")
             crop = np.zeros((10, 10, 3), dtype=np.uint8)
-        
         crop = Unbatchable([crop])
         batch = {
             "img": crop,
         }
         return batch
 
-    def run_mmocr_inference(self, images_np: List[np.ndarray]) -> List[Dict]:
-        """Run MMOCR inference on a batch of images."""
-        if hasattr(self, 'use_mmocr_inferencer') and self.use_mmocr_inferencer:
-            # Use MMOCRInferencer like the working version
-            log.info("Using MMOCRInferencer for inference")
-            try:
-                predictions = self.ocr(images_np)['predictions']
-                # Convert to standard format
-                pred_results = []
-                for pred in predictions:
-                    result_out = dict(rec_texts=[], rec_scores=[])
-                    if 'rec_texts' in pred and 'rec_scores' in pred:
-                        result_out['rec_texts'] = pred['rec_texts']
-                        result_out['rec_scores'] = pred['rec_scores']
-                    pred_results.append(result_out)
-                return pred_results
-            except Exception as e:
-                log.warning(f"MMOCRInferencer failed: {e}, falling back to separate inferencers")
-                self.use_mmocr_inferencer = False
-        
-        # Fallback to separate inferencers
-        log.info("Using separate TextDetInferencer and TextRecInferencer")
-        
-        # Text detection
-        det_results = self.textdetinferencer(
+    def run_mmocr_inference(self, images_np):
+        """Run MMOCR inference - EXACTLY like working baseline"""
+        result = {}
+        result['det'] = self.textdetinferencer(
             images_np,
             return_datasamples=True,
             batch_size=self.batch_size,
             progress_bar=False,
         )['predictions']
 
-        # Debug logging for text detection
-        log.info(f"Text detection found {len(det_results)} results")
-        for i, det_data_sample in enumerate(det_results):
-            det_pred = det_data_sample.pred_instances
-            log.info(f"Image {i}: {len(det_pred['polygons'])} text regions detected")
-
-        # Text recognition
-        rec_results = []
-        for img, det_data_sample in zip(images_np, det_results):
+        result['rec'] = []
+        for img, det_data_sample in zip(images_np, result['det']):
             det_pred = det_data_sample.pred_instances
             rec_inputs = []
-            
             for polygon in det_pred['polygons']:
+                # Roughly convert the polygon to a quadangle with 4 points
                 quad = bbox2poly(poly2bbox(polygon)).tolist()
                 rec_input = crop_img(img, quad)
                 if rec_input.shape[0] == 0 or rec_input.shape[1] == 0:
                     continue
                 rec_inputs.append(rec_input)
-            
-            log.info(f"Processing {len(rec_inputs)} text regions for recognition")
-            
-            if rec_inputs:
-                rec_result = self.textrecinferencer(
+            result['rec'].append(
+                self.textrecinferencer(
                     rec_inputs,
                     return_datasamples=True,
                     batch_size=self.batch_size,
-                    progress_bar=False)['predictions']
-                rec_results.append(rec_result)
-            else:
-                rec_results.append([])
+                    progress_bar=False)['predictions'])
 
-        # Convert to standard format
-        pred_results = []
-        for rec_pred in rec_results:
+        pred_results = [{} for _ in range(len(result['rec']))]
+        for i, rec_pred in enumerate(result['rec']):
             result_out = dict(rec_texts=[], rec_scores=[])
             for rec_pred_instance in rec_pred:
                 rec_dict_res = self.textrecinferencer.pred2dict(rec_pred_instance)
                 result_out['rec_texts'].append(rec_dict_res['text'])
                 result_out['rec_scores'].append(rec_dict_res['scores'])
-            pred_results.append(result_out)
+            pred_results[i].update(result_out)
 
         return pred_results
 
-    def extract_jersey_numbers_from_ocr(self, prediction: Dict) -> Tuple[Optional[str], float]:
-        """Extract jersey number and confidence from OCR prediction."""
-        jersey_numbers = []
-        jn_confidences = []
+    def aggregate_tracklet_sequence(self, track_id: int, jersey_numbers: List, confidences: List, frame_indices: List) -> Tuple[Optional[str], float]:
+        """Aggregate jersey numbers over tracklet sequence using temporal consistency"""
+        if not jersey_numbers or all(jn is None for jn in jersey_numbers):
+            return None, 0.0
         
-        # Debug logging to see what OCR is detecting
-        if len(prediction['rec_texts']) > 0:
-            log.info(f"OCR detected text: {prediction['rec_texts']}")
-            log.info(f"OCR confidence scores: {prediction['rec_scores']}")
+        # Filter out None values and low confidence detections
+        valid_detections = [(jn, conf, idx) for jn, conf, idx in zip(jersey_numbers, confidences, frame_indices) 
+                           if jn is not None and conf >= self.min_confidence_threshold]
         
-        for txt, conf in zip(prediction['rec_texts'], prediction['rec_scores']):
-            jn = self.extract_numbers(txt)
-            log.info(f"Text: '{txt}' -> Extracted number: {jn}")
-            # Use the same permissive approach as working mmocr_api.py
-            if jn is not None:
-                log.info(f"Valid jersey number: {jn} with confidence {conf}")
-                jersey_numbers.append(jn)
-                jn_confidences.append(conf)
-            else:
-                log.info(f"Invalid jersey number: {jn} (no digits found)")
+        if not valid_detections:
+            return None, 0.0
         
-        if not jersey_numbers:
-            log.info("No valid jersey numbers found")
-            return self.no_jersey_number()
+        # Group by jersey number
+        jn_groups = defaultdict(list)
+        for jn, conf, idx in valid_detections:
+            jn_groups[jn].append((conf, idx))
         
-        # Use the same approach as working mmocr_api.py - highest confidence
-        best_idx = np.argmax(jn_confidences)
-        best_jn = jersey_numbers[best_idx]
-        best_conf = jn_confidences[best_idx]
+        # Find the most frequent jersey number
+        best_jn = max(jn_groups.keys(), key=lambda x: len(jn_groups[x]))
+        best_detections = jn_groups[best_jn]
         
-        # Limit to 2 digits like the working version
-        if best_jn is not None:
-            best_jn = best_jn[:2]
+        # Calculate temporal consistency score
+        temporal_score = len(best_detections) / len(jersey_numbers)
         
-        log.info(f"Best jersey number: {best_jn} with confidence {best_conf}")
-        return best_jn, best_conf
+        # Calculate average confidence for the best jersey number
+        avg_confidence = np.mean([conf for conf, _ in best_detections])
+        
+        # Combine temporal consistency and confidence
+        final_confidence = (self.temporal_weight * temporal_score + 
+                          self.spatial_weight * avg_confidence)
+        
+        log.info(f"Tracklet {track_id} aggregation:")
+        log.info(f"  - Jersey numbers: {jersey_numbers}")
+        log.info(f"  - Confidences: {confidences}")
+        log.info(f"  - Frame indices: {frame_indices}")
+        log.info(f"  - Best jersey number: {best_jn}")
+        log.info(f"  - Final confidence: {final_confidence:.3f}")
+        
+        return best_jn, final_confidence
 
     @torch.no_grad()
     def process(self, batch, detections: pd.DataFrame, metadatas: pd.DataFrame):
-        """Process a batch of detections with improved jersey recognition."""
-        # Extract track IDs - handle case where they might not be available
-        if 'track_id' in detections.columns:
-            track_ids = detections['track_id'].values
-            # Convert track IDs to integers if they're floats
-            track_ids = [int(tid) if tid is not None and not pd.isna(tid) else None for tid in track_ids]
-        else:
-            log.warning("track_id not found in detections, using frame-level processing only")
-            track_ids = [None] * len(detections)
-        
-        # Run OCR inference
-        images_np = [img.cpu().numpy() for img in batch['img']]
-        predictions = self.run_mmocr_inference(images_np)
-        
-        # Process each detection
+        """Process batch with temporal aggregation"""
         jersey_number_detection = []
         jersey_number_confidence = []
         
-        for i, (prediction, track_id) in enumerate(zip(predictions, track_ids)):
-            # Extract frame-level jersey number
+        # Convert batch images to numpy
+        images_np = [img.cpu().numpy() for img in batch['img']]
+        del batch['img']
+        
+        # Run MMOCR inference using working baseline method
+        predictions = self.run_mmocr_inference(images_np)
+        
+        # Process each detection
+        for i, prediction in enumerate(predictions):
             jn, conf = self.extract_jersey_numbers_from_ocr(prediction)
             
-            # Store in tracklet sequence if we have a track ID
-            if track_id is not None and not pd.isna(track_id):
-                # Initialize tracklet sequence if it doesn't exist
-                if track_id not in self.tracklet_sequences:
-                    self.tracklet_sequences[track_id] = []
-                
-                # Store the frame-level result in tracklet sequence
+            # Get track_id for this detection
+            track_id = detections.iloc[i].get('track_id') if i < len(detections) else None
+            
+            if track_id is not None:
+                # Store in tracklet sequence
                 self.tracklet_sequences[track_id].append({
                     'jersey_number': jn,
                     'confidence': conf,
-                    'frame_idx': i
+                    'frame_index': i
                 })
                 
-                # Debug logging for tracklet 1 to see what's being stored
-                if track_id == 1:
-                    log.info(f"Frame {i}: Stored jersey number {jn} with confidence {conf} for tracklet {track_id}")
-                    log.info(f"  - Tracklet {track_id} now has {len(self.tracklet_sequences[track_id])} frames")
-                    log.info(f"  - Current sequence: {[item['jersey_number'] for item in self.tracklet_sequences[track_id]]}")
-                
-                # Only process when we have exactly the required number of frames
-                if len(self.tracklet_sequences[track_id]) == self.sequence_length:
-                    sequence_data = self.tracklet_sequences[track_id]
-                    jn_numbers = [item['jersey_number'] for item in sequence_data]
-                    jn_confs = [item['confidence'] for item in sequence_data]
+                # Process sequence when we have enough frames
+                if len(self.tracklet_sequences[track_id]) >= self.sequence_length:
+                    # Extract sequence data
+                    sequence_data = self.tracklet_sequences[track_id][-self.sequence_length:]
+                    jersey_numbers = [item['jersey_number'] for item in sequence_data]
+                    confidences = [item['confidence'] for item in sequence_data]
+                    frame_indices = [item['frame_index'] for item in sequence_data]
                     
-                    # Debug logging for tracklet processing
-                    if track_id == 1:  # Log for first tracklet only to avoid spam
-                        log.info(f"Processing tracklet {track_id} with {len(sequence_data)} frames")
-                        log.info(f"  - sequence_length threshold: {self.sequence_length}")
-                        log.info(f"  - min_confidence_threshold: {self.min_confidence_threshold}")
-                        log.info(f"  - temporal_weight: {self.temporal_weight}")
-                        log.info(f"  - spatial_weight: {self.spatial_weight}")
-                        log.info(f"  - Jersey numbers detected: {jn_numbers}")
-                        log.info(f"  - Confidences: {jn_confs}")
-                        log.info(f"  - Frame indices: {[item['frame_idx'] for item in sequence_data]}")
+                    # Aggregate over sequence
+                    final_jn, final_conf = self.aggregate_tracklet_sequence(
+                        track_id, jersey_numbers, confidences, frame_indices
+                    )
                     
-                    # Aggregate at tracklet level
-                    tracklet_jn, tracklet_conf = self.aggregate_tracklet_jersey_simple(
-                        track_id, jn_numbers, jn_confs)
+                    jersey_number_detection.append(final_jn)
+                    jersey_number_confidence.append(final_conf)
                     
-                    if track_id == 1:  # Log results for first tracklet
-                        log.info(f"  - Final jersey number: {tracklet_jn}")
-                        log.info(f"  - Final confidence: {tracklet_conf}")
-                    
-                    # Use tracklet-level prediction for this frame
-                    jersey_number_detection.append(tracklet_jn)
-                    jersey_number_confidence.append(tracklet_conf)
-                    
-                    # Remove the oldest frame to maintain sequence length
-                    self.tracklet_sequences[track_id].pop(0)
-                    
-                elif len(self.tracklet_sequences[track_id]) > self.sequence_length:
-                    # This shouldn't happen, but if it does, remove oldest frame
-                    self.tracklet_sequences[track_id].pop(0)
-                    # Use frame-level prediction for now
-                    jersey_number_detection.append(jn)
-                    jersey_number_confidence.append(conf)
+                    # Remove oldest frame to maintain sequence length
+                    if len(self.tracklet_sequences[track_id]) > self.sequence_length:
+                        self.tracklet_sequences[track_id].pop(0)
                 else:
-                    # Use frame-level prediction for now
-                    if track_id == 1:  # Log for first tracklet
-                        log.info(f"Tracklet {track_id} has only {len(self.tracklet_sequences[track_id])} frames, using frame-level prediction")
-                        log.info(f"  - Current sequence: {[item['jersey_number'] for item in self.tracklet_sequences[track_id]]}")
-                        log.info(f"  - Need {self.sequence_length} frames for tracklet processing")
+                    # Use frame-level prediction for short sequences
                     jersey_number_detection.append(jn)
                     jersey_number_confidence.append(conf)
             else:
-                # No track ID, use frame-level prediction
+                # No track_id, use frame-level prediction
                 jersey_number_detection.append(jn)
                 jersey_number_confidence.append(conf)
         
-        # Update detections
+        # Set outputs
         detections['jersey_number_detection'] = jersey_number_detection
         detections['jersey_number_confidence'] = jersey_number_confidence
         
-        # Add role attribute that team modules expect (simple assignment based on jersey number)
+        # Add role columns for downstream compatibility
         roles = []
         for jn in jersey_number_detection:
             if jn is not None and jn != '':
-                # Simple role assignment: jersey numbers 1-11 are typically players
                 try:
                     jn_int = int(jn)
                     if 1 <= jn_int <= 11:
                         roles.append('player')
                     else:
-                        roles.append('player')  # Default to player for other numbers
+                        roles.append('player')
                 except ValueError:
-                    roles.append('player')  # Default to player if not a number
+                    roles.append('player')
             else:
-                roles.append('player')  # Default to player if no jersey number
+                roles.append('player')
         
-        # Output both role columns to satisfy different module requirements
-        detections['role_detection'] = roles  # For prtreid compatibility
-        detections['role'] = roles           # For TrackletTeamClustering
-        
-        # Ensure role column is properly set and persists
-        if 'role_detection' in detections.columns and 'role' in detections.columns:
-            # Make sure both columns have the same values
-            detections['role'] = detections['role_detection'].copy()
-            log.info(f"Successfully set both role columns with {len(roles)} entries")
-        else:
-            log.error(f"Failed to set role columns properly!")
-            log.error(f"  - role_detection in columns: {'role_detection' in detections.columns}")
-            log.error(f"  - role in columns: {'role' in detections.columns}")
-        
-        # Debug logging to verify columns are present
-        log.info(f"ImprovedJerseyRecognition output columns: {list(detections.columns)}")
-        log.info(f"  - role_detection present: {'role_detection' in detections.columns}")
-        log.info(f"  - role present: {'role' in detections.columns}")
-        log.info(f"  - jersey_number_detection present: {'jersey_number_detection' in detections.columns}")
+        detections['role_detection'] = roles
+        detections['role'] = roles
         
         return detections
-
-    def reset_tracklet_sequences(self):
-        """Reset tracklet sequences (useful for new video)."""
-        self.tracklet_sequences.clear()
-        self.tracklet_jersey_history.clear()

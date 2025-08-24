@@ -1,6 +1,6 @@
 _target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
 batch_size: 8
 sequence_length: 5  # Number of frames to consider for tracklet-level aggregation
-min_confidence_threshold: 0.3  # Minimum confidence threshold for valid detections
-temporal_weight: 0.7  # Weight for temporal consistency in final confidence
-spatial_weight: 0.3   # Weight for spatial consistency in final confidence
+min_confidence_threshold: 0.2  # Lower threshold to catch more valid detections
+temporal_weight: 0.8  # Higher weight for temporal consistency
+spatial_weight: 0.2   # Lower weight for spatial consistency

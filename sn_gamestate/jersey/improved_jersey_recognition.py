@@ -75,11 +75,15 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
 
     def extract_numbers(self, text: str) -> Optional[str]:
         """Extract numeric characters from text."""
+        log.info(f"extract_numbers called with text: '{text}' (type: {type(text)})")
         number = ''
         for char in text:
+            log.info(f"  Processing char: '{char}' (isdigit: {char.isdigit()})")
             if char.isdigit():
                 number += char
-        return number if number != '' else None
+        result = number if number != '' else None
+        log.info(f"  Final result: '{result}'")
+        return result
 
     def validate_jersey_number(self, number: str) -> bool:
         """Validate if the extracted number is a valid jersey number."""
@@ -344,19 +348,19 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         for txt, conf in zip(prediction['rec_texts'], prediction['rec_scores']):
             jn = self.extract_numbers(txt)
             log.info(f"Text: '{txt}' -> Extracted number: {jn}")
-            # Temporarily remove strict validation to match working version
-            if jn is not None:  # Remove validation temporarily
+            # Use the same permissive approach as working mmocr_api.py
+            if jn is not None:
                 log.info(f"Valid jersey number: {jn} with confidence {conf}")
                 jersey_numbers.append(jn)
                 jn_confidences.append(conf)
             else:
-                log.info(f"Invalid jersey number: {jn} (validation failed)")
+                log.info(f"Invalid jersey number: {jn} (no digits found)")
         
         if not jersey_numbers:
             log.info("No valid jersey numbers found")
             return self.no_jersey_number()
         
-        # Return the highest confidence valid jersey number
+        # Use the same approach as working mmocr_api.py - highest confidence
         best_idx = np.argmax(jn_confidences)
         best_jn = jersey_numbers[best_idx]
         best_conf = jn_confidences[best_idx]

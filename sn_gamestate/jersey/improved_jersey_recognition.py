@@ -22,7 +22,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
     This module processes sequences of frames for each tracklet to improve
     jersey number recognition accuracy and confidence.
     """
-    input_columns = ["bbox_ltwh", "track_id"]
+    input_columns = ["bbox_ltwh"]  # Only require bbox_ltwh like working version
     output_columns = ["jersey_number_detection", "jersey_number_confidence"]
     collate_fn = default_collate
 
@@ -43,11 +43,28 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - min_confidence_threshold: {self.min_confidence_threshold}")
         log.info(f"  - temporal_weight: {self.temporal_weight}")
         log.info(f"  - spatial_weight: {self.spatial_weight}")
+        log.info(f"  - device: {self.device}")
+        log.info(f"  - batch_size: {self.batch_size}")
         
-        # Initialize MMOCR models
+        # Initialize MMOCR models - match working version exactly
+        try:
+            from mmocr.apis import MMOCRInferencer
+            log.info("Loading MMOCRInferencer...")
+            # Don't pass device to MMOCRInferencer like working version
+            self.ocr = MMOCRInferencer(det='dbnet_resnet18_fpnc_1200e_icdar2015', rec='SAR')
+            self.use_mmocr_inferencer = True
+            log.info("MMOCRInferencer loaded successfully")
+        except Exception as e:
+            log.warning(f"Failed to load MMOCRInferencer: {e}, falling back to separate inferencers")
+            self.use_mmocr_inferencer = False
+        
+        # Always create separate inferencers like working version
+        log.info("Loading MMOCR text detection model...")
         self.textdetinferencer = TextDetInferencer(
             'dbnet_resnet18_fpnc_1200e_icdar2015', device=device)
+        log.info("Loading MMOCR text recognition model...")
         self.textrecinferencer = TextRecInferencer('SAR', device=device)
+        log.info("MMOCR models loaded successfully")
         
         # Tracklet sequence storage
         self.tracklet_sequences = defaultdict(list)
@@ -225,7 +242,13 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         )
         crop = image[t:b, l:r]
         
+        # Debug logging for image cropping
+        log.info(f"Original image shape: {image.shape}")
+        log.info(f"Crop coordinates: l={l}, t={t}, r={r}, b={b}")
+        log.info(f"Cropped image shape: {crop.shape}")
+        
         if crop.shape[0] == 0 or crop.shape[1] == 0:
+            log.warning(f"Empty crop detected, using fallback")
             crop = np.zeros((10, 10, 3), dtype=np.uint8)
         
         crop = Unbatchable([crop])
@@ -236,6 +259,27 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
 
     def run_mmocr_inference(self, images_np: List[np.ndarray]) -> List[Dict]:
         """Run MMOCR inference on a batch of images."""
+        if hasattr(self, 'use_mmocr_inferencer') and self.use_mmocr_inferencer:
+            # Use MMOCRInferencer like the working version
+            log.info("Using MMOCRInferencer for inference")
+            try:
+                predictions = self.ocr(images_np)['predictions']
+                # Convert to standard format
+                pred_results = []
+                for pred in predictions:
+                    result_out = dict(rec_texts=[], rec_scores=[])
+                    if 'rec_texts' in pred and 'rec_scores' in pred:
+                        result_out['rec_texts'] = pred['rec_texts']
+                        result_out['rec_scores'] = pred['rec_scores']
+                    pred_results.append(result_out)
+                return pred_results
+            except Exception as e:
+                log.warning(f"MMOCRInferencer failed: {e}, falling back to separate inferencers")
+                self.use_mmocr_inferencer = False
+        
+        # Fallback to separate inferencers
+        log.info("Using separate TextDetInferencer and TextRecInferencer")
+        
         # Text detection
         det_results = self.textdetinferencer(
             images_np,
@@ -243,6 +287,12 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
             batch_size=self.batch_size,
             progress_bar=False,
         )['predictions']
+
+        # Debug logging for text detection
+        log.info(f"Text detection found {len(det_results)} results")
+        for i, det_data_sample in enumerate(det_results):
+            det_pred = det_data_sample.pred_instances
+            log.info(f"Image {i}: {len(det_pred['polygons'])} text regions detected")
 
         # Text recognition
         rec_results = []
@@ -256,6 +306,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                 if rec_input.shape[0] == 0 or rec_input.shape[1] == 0:
                     continue
                 rec_inputs.append(rec_input)
+            
+            log.info(f"Processing {len(rec_inputs)} text regions for recognition")
             
             if rec_inputs:
                 rec_result = self.textrecinferencer(
@@ -284,24 +336,47 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         jersey_numbers = []
         jn_confidences = []
         
+        # Debug logging to see what OCR is detecting
+        if len(prediction['rec_texts']) > 0:
+            log.info(f"OCR detected text: {prediction['rec_texts']}")
+            log.info(f"OCR confidence scores: {prediction['rec_scores']}")
+        
         for txt, conf in zip(prediction['rec_texts'], prediction['rec_scores']):
             jn = self.extract_numbers(txt)
-            if jn is not None and self.validate_jersey_number(jn):
+            log.info(f"Text: '{txt}' -> Extracted number: {jn}")
+            # Temporarily remove strict validation to match working version
+            if jn is not None:  # Remove validation temporarily
+                log.info(f"Valid jersey number: {jn} with confidence {conf}")
                 jersey_numbers.append(jn)
                 jn_confidences.append(conf)
+            else:
+                log.info(f"Invalid jersey number: {jn} (validation failed)")
         
         if not jersey_numbers:
+            log.info("No valid jersey numbers found")
             return self.no_jersey_number()
         
         # Return the highest confidence valid jersey number
         best_idx = np.argmax(jn_confidences)
-        return jersey_numbers[best_idx], jn_confidences[best_idx]
+        best_jn = jersey_numbers[best_idx]
+        best_conf = jn_confidences[best_idx]
+        
+        # Limit to 2 digits like the working version
+        if best_jn is not None:
+            best_jn = best_jn[:2]
+        
+        log.info(f"Best jersey number: {best_jn} with confidence {best_conf}")
+        return best_jn, best_conf
 
     @torch.no_grad()
     def process(self, batch, detections: pd.DataFrame, metadatas: pd.DataFrame):
         """Process a batch of detections with improved jersey recognition."""
-        # Extract track IDs
-        track_ids = detections['track_id'].values if 'track_id' in detections.columns else [None] * len(detections)
+        # Extract track IDs - handle case where they might not be available
+        if 'track_id' in detections.columns:
+            track_ids = detections['track_id'].values
+        else:
+            log.warning("track_id not found in detections, using frame-level processing only")
+            track_ids = [None] * len(detections)
         
         # Run OCR inference
         images_np = [img.cpu().numpy() for img in batch['img']]

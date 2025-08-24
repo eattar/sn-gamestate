@@ -1,0 +1,76 @@
+# TrackLab SoccerNet config for debugging improved jersey recognition
+
+defaults:
+  - dataset: soccernet_gs
+  - eval: gs_hota
+  - engine: offline
+  - visualization: gamestate
+  - modules/bbox_detector: yolo_ultralytics
+  - modules/reid: prtreid
+  - modules/track: bpbreid_strong_sort
+  - modules/jersey_number_detect: improved_mmocr
+  - modules/team: kmeans_embeddings
+  - modules/team_side: mean_position
+  - modules/tracklet_agg: voting_role_jn
+  - modules/pitch : nbjw_calib
+  - modules/calibration: nbjw_calib
+  - _self_
+
+pipeline:
+  - bbox_detector
+  - reid
+  - track
+  - pitch
+  - calibration
+  - jersey_number_detect
+  - tracklet_agg
+  - team
+  - team_side
+
+experiment_name: "sn-gamestate-improved-debug"
+
+home_dir: "${oc.env:HOME}"
+data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
+model_dir: "${project_dir}/pretrained_models"
+
+num_cores: 1
+use_wandb: False  # Disable wandb for debugging
+use_rich: True
+
+modules:
+  bbox_detector: {batch_size: 8}
+  pose_bottomup: {batch_size: 8}
+  reid: {batch_size: 64}
+  track: {batch_size: 64}
+  pitch: {batch_size: 1}
+  calibration: {batch_size: 1}
+  jersey_number_detect: {batch_size: 8}
+
+test_tracking: True
+eval_tracking: True
+print_config: True
+
+dataset:
+  nvid: 1  # Process only 1 video for debugging
+  eval_set: "valid"
+  dataset_path: ${data_dir}/SoccerNetGS
+  vids_dict:
+    valid: []
+
+state:
+  save_file: null  # Disable saving for debugging
+  load_file: null
+
+visualization:
+  cfg:
+    save_videos: False  # Disable video saving for debugging
+
+project_dir: "${hydra:runtime.cwd}"
+hydra:
+  output_subdir: "configs"
+  job:
+    chdir: True
+  run:
+    dir: "/netscratch/eattar/SoccerNet/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+  sweep:
+    dir: "multirun_outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"

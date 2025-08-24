@@ -340,15 +340,23 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                         log.info(f"  - min_confidence_threshold: {self.min_confidence_threshold}")
                         log.info(f"  - temporal_weight: {self.temporal_weight}")
                         log.info(f"  - spatial_weight: {self.spatial_weight}")
+                        log.info(f"  - Jersey numbers detected: {jn_numbers}")
+                        log.info(f"  - Confidences: {jn_confs}")
                     
                     # Aggregate at tracklet level (simplified without spatial analysis)
                     tracklet_jn, tracklet_conf = self.aggregate_tracklet_jersey_simple(
                         track_id, jn_numbers, jn_confs)
                     
+                    if track_id == 1:  # Log results for first tracklet
+                        log.info(f"  - Final jersey number: {tracklet_jn}")
+                        log.info(f"  - Final confidence: {tracklet_conf}")
+                    
                     jersey_number_detection.append(tracklet_jn)
                     jersey_number_confidence.append(tracklet_conf)
                 else:
                     # Use frame-level prediction for now
+                    if track_id == 1:  # Log for first tracklet
+                        log.info(f"Tracklet {track_id} has only {len(self.tracklet_sequences[track_id])} frames, using frame-level prediction")
                     jersey_number_detection.append(jn)
                     jersey_number_confidence.append(conf)
             else:

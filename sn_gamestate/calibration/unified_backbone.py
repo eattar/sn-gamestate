@@ -326,7 +326,11 @@ class UnifiedBackboneModule(ImageLevelModule):
                 "y_bottom_middle": 0.0
             }
             
+            # Get the image_id from the input detections DataFrame
+            image_id = detections.iloc[i].name if i < len(detections) else f"frame_{i}"
+            
             detection_data.append({
+                "image_id": image_id,
                 "bbox_ltwh": bbox_ltwh,
                 "confidence": conf,
                 "bbox_pitch": bbox_pitch

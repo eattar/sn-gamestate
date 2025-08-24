@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple, List
 
 from tracklab.pipeline import ImageLevelModule
 from tracklab.utils.collate import default_collate
-from sn_gamestate.calibration.camera import Camera
+from sn_calibration_baseline.camera import Camera
 
 log = logging.getLogger(__name__)
 

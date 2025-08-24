@@ -253,6 +253,8 @@ class UnifiedBackboneModule(DetectionLevelModule):
         print(f"DEBUG: metadatas shape: {metadatas.shape}")
         print(f"DEBUG: metadatas columns: {metadatas.columns.tolist()}")
         print(f"DEBUG: metadatas index: {metadatas.index.tolist()}")
+        print(f"DEBUG: metadatas sample data:")
+        print(metadatas.head())
         
         # Ensure batch has the correct shape for temporal processing
         print(f"DEBUG: Original batch shape: {batch.shape}")
@@ -287,6 +289,12 @@ class UnifiedBackboneModule(DetectionLevelModule):
         
         # Process detection outputs - create detections from scratch
         detection_outputs = self._process_detections(outputs['detection'], metadatas)
+        
+        # Debug: Show what we're returning
+        print(f"DEBUG: UnifiedBackboneModule returning detections with shape: {detection_outputs.shape}")
+        print(f"DEBUG: Detection columns: {detection_outputs.columns.tolist()}")
+        print(f"DEBUG: Detection sample data:")
+        print(detection_outputs.head())
         
         # For DetectionLevelModule, we only return detections
         # Pitch and calibration outputs will be handled by separate modules

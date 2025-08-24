@@ -46,24 +46,40 @@ modules:
     backbone_type: "resnet50"
     temporal_frames: 5
     use_attention: true
+    detection_threshold: 0.5
+    pitch_threshold: 0.3
 ```
 
 ## How to Use
 
-### Option 1: Easy Switching (Recommended)
+### Option 1: Simple One-Shot Switch (Recommended)
 
-Use the configuration switcher script:
+Use the simple switcher script that switches and exits automatically:
 
 ```bash
-# Run the switcher
-python switch_to_unified_backbone.py
+# Run the simple switcher
+python switch_to_unified_backbone_simple.py
 
-# Choose option 1 to switch to unified backbone
+# The script will switch to unified backbone and exit
 # Then run your normal command
 uv run tracklab -cn soccernet
 ```
 
-### Option 2: Manual Configuration
+### Option 2: Interactive Switching
+
+Use the interactive configuration switcher script:
+
+```bash
+# Run the interactive switcher
+python switch_to_unified_backbone.py
+
+# Choose option 1 to switch to unified backbone
+# Choose 'y' when asked if you want to exit
+# Then run your normal command
+uv run tracklab -cn soccernet
+```
+
+### Option 3: Manual Configuration
 
 1. **Backup your current config:**
    ```bash
@@ -80,7 +96,7 @@ uv run tracklab -cn soccernet
    uv run tracklab -cn soccernet
    ```
 
-### Option 3: Use Alternative Config
+### Option 4: Use Alternative Config
 
 Use the unified configuration directly:
 
@@ -116,7 +132,7 @@ modules:
 If you want to use the original separate modules:
 
 ```bash
-# Use the switcher script
+# Use the interactive switcher script
 python switch_to_unified_backbone.py
 # Choose option 2
 
@@ -171,7 +187,8 @@ sn_gamestate/
 │       └── unified_backbone.yaml   # Module config
 ├── calibration/
 │   └── unified_backbone.py         # Implementation
-└── switch_to_unified_backbone.py   # Configuration switcher
+├── switch_to_unified_backbone.py   # Interactive configuration switcher
+└── switch_to_unified_backbone_simple.py # Simple one-shot switcher
 ```
 
 ## Summary

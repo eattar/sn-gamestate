@@ -211,10 +211,24 @@ def main():
         
         if choice == "1":
             if backup_original_config():
-                switch_to_unified_backbone()
+                if switch_to_unified_backbone():
+                    print("\n🎉 Successfully switched to Unified Backbone!")
+                    print("   You can now run: uv run tracklab -cn soccernet")
+                    print("\nWould you like to exit? (y/n): ", end="")
+                    exit_choice = input().strip().lower()
+                    if exit_choice in ['y', 'yes']:
+                        print("👋 Exiting. Happy coding!")
+                        break
         elif choice == "2":
             if backup_original_config():
-                switch_to_separate_modules()
+                if switch_to_separate_modules():
+                    print("\n🎉 Successfully switched to Separate Modules!")
+                    print("   You can now run: uv run tracklab -cn soccernet")
+                    print("\nWould you like to exit? (y/n): ", end="")
+                    exit_choice = input().strip().lower()
+                    if exit_choice in ['y', 'yes']:
+                        print("👋 Exiting. Happy coding!")
+                        break
         elif choice == "3":
             backup_original_config()
         elif choice == "4":

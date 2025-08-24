@@ -263,8 +263,18 @@ class UnifiedBackboneModule(ImageLevelModule):
         """
         Process batch through the unified backbone and return detection and calibration outputs.
         """
+        # Ensure batch has the correct shape for temporal processing
+        if len(batch.shape) == 4:  # (B, C, H, W) - single frame
+            # Add temporal dimension
+            batch = batch.unsqueeze(1)  # (B, 1, C, H, W)
+        elif len(batch.shape) == 5:  # (B, T, C, H, W) - temporal frames
+            pass  # Already correct shape
+        else:
+            raise ValueError(f"Unexpected batch shape: {batch.shape}. Expected (B, C, H, W) or (B, T, C, H, W)")
+        
         with torch.no_grad():
             batch = batch.to(self.device)
+            print(f"DEBUG: Batch shape before model: {batch.shape}")
             outputs = self.model(batch)
         
         # Process detection outputs

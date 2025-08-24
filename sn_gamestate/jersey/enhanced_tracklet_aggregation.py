@@ -20,8 +20,10 @@ class EnhancedTrackletAggregation(VideoLevelModule):
     input_columns = ["track_id", "jersey_number_detection", "jersey_number_confidence", "bbox_pitch"]
     output_columns = ["jersey_number_final", "jersey_number_confidence_final"]
 
-    def __init__(self, cfg, device, tracking_dataset=None):
+    def __init__(self, **kwargs):
         super().__init__()
+        # Extract configuration from kwargs
+        cfg = kwargs.get('cfg', {})
         self.min_tracklet_length = cfg.get('min_tracklet_length', 3)
         self.confidence_threshold = cfg.get('confidence_threshold', 0.5)
         self.temporal_decay = cfg.get('temporal_decay', 0.9)

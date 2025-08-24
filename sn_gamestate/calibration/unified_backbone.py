@@ -336,6 +336,9 @@ class UnifiedBackboneModule(ImageLevelModule):
         # Create detections from scratch using metadatas
         # This is a DetectionLevelModule, so we create initial detections
         for i in range(len(metadatas)):
+            # Get the current metadata row
+            current_metadata = metadatas.iloc[i]
+            
             # Create dummy bbox_ltwh (left, top, width, height) as numpy array
             bbox_ltwh = np.array([100, 100, 50, 100], dtype=np.float32)  # Convert to numpy array
             conf = 0.8  # Dummy confidence
@@ -352,7 +355,7 @@ class UnifiedBackboneModule(ImageLevelModule):
             }
             
             # Get the image_id from the metadatas DataFrame
-            image_id = metadatas.iloc[i].name if i < len(metadatas) else f"frame_{i}"
+            image_id = current_metadata.name if i < len(metadatas) else f"frame_{i}"
             
             detection_data.append({
                 "image_id": image_id,
@@ -362,7 +365,7 @@ class UnifiedBackboneModule(ImageLevelModule):
                 "keypoints_conf": 1.0,  # Add missing keypoints confidence
                 "role": "player",  # Add role for team classification
                 "track_id": np.nan,  # Add track_id for tracking
-                "video_id": metadata.get("video_id", "unknown")  # Add video_id from metadata
+                "video_id": current_metadata.get("video_id", "unknown")  # Add video_id from metadata
             })
         
         result_df = pd.DataFrame(detection_data)

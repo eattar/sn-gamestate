@@ -145,19 +145,26 @@ class SpatioTemporalBackbone(nn.Module):
         if self.use_attention:
             # Spatial attention
             B, T, C, H, W = temporal_features.shape
-            spatial_features = temporal_features.view(B, T, C, H * W).transpose(1, 2)  # (B, C, T*H*W)
-            spatial_features = spatial_features.transpose(1, 2)  # (B, T*H*W, C)
+            # Reshape to (B*T, C, H*W) for spatial attention
+            spatial_features = temporal_features.view(B * T, C, H * W)  # (B*T, C, H*W)
+            spatial_features = spatial_features.transpose(1, 2)  # (B*T, H*W, C)
             
+            # Apply spatial attention
             spatial_attended, _ = self.spatial_attention(
                 spatial_features, spatial_features, spatial_features
             )
-            spatial_attended = spatial_attended.transpose(1, 2).view(B, C, T, H, W)
+            # Reshape back to (B, T, C, H, W)
+            spatial_attended = spatial_attended.transpose(1, 2).view(B, T, C, H, W)
             
             # Temporal attention
-            temporal_features = temporal_features.view(B, T, C, H * W)  # (B, T, C*H*W)
+            # Reshape to (B, T, C*H*W) for temporal attention
+            temporal_features_flat = temporal_features.view(B, T, C * H * W)  # (B, T, C*H*W)
+            
+            # Apply temporal attention
             temporal_attended, _ = self.temporal_attention(
-                temporal_features, temporal_features, temporal_features
+                temporal_features_flat, temporal_features_flat, temporal_features_flat
             )
+            # Reshape back to (B, T, C, H, W)
             temporal_attended = temporal_attended.view(B, T, C, H, W)
             
             # Combine attention outputs

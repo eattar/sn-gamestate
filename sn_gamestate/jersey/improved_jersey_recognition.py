@@ -37,6 +37,13 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         self.temporal_weight = temporal_weight
         self.spatial_weight = spatial_weight
         
+        # Debug logging to verify parameters
+        log.info(f"ImprovedJerseyRecognition initialized with:")
+        log.info(f"  - sequence_length: {self.sequence_length}")
+        log.info(f"  - min_confidence_threshold: {self.min_confidence_threshold}")
+        log.info(f"  - temporal_weight: {self.temporal_weight}")
+        log.info(f"  - spatial_weight: {self.spatial_weight}")
+        
         # Initialize MMOCR models
         self.textdetinferencer = TextDetInferencer(
             'dbnet_resnet18_fpnc_1200e_icdar2015', device=device)
@@ -325,6 +332,14 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                     sequence_data = self.tracklet_sequences[track_id]
                     jn_numbers = [item['jersey_number'] for item in sequence_data]
                     jn_confs = [item['confidence'] for item in sequence_data]
+                    
+                    # Debug logging for tracklet processing
+                    if track_id == 1:  # Log for first tracklet only to avoid spam
+                        log.info(f"Processing tracklet {track_id} with {len(sequence_data)} frames")
+                        log.info(f"  - sequence_length threshold: {self.sequence_length}")
+                        log.info(f"  - min_confidence_threshold: {self.min_confidence_threshold}")
+                        log.info(f"  - temporal_weight: {self.temporal_weight}")
+                        log.info(f"  - spatial_weight: {self.spatial_weight}")
                     
                     # Aggregate at tracklet level (simplified without spatial analysis)
                     tracklet_jn, tracklet_conf = self.aggregate_tracklet_jersey_simple(

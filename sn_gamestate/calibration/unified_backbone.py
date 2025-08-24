@@ -264,13 +264,30 @@ class UnifiedBackboneModule(ImageLevelModule):
         Process batch through the unified backbone and return detection and calibration outputs.
         """
         # Ensure batch has the correct shape for temporal processing
+        print(f"DEBUG: Original batch shape: {batch.shape}")
+        
         if len(batch.shape) == 4:  # (B, C, H, W) - single frame
             # Add temporal dimension
             batch = batch.unsqueeze(1)  # (B, 1, C, H, W)
         elif len(batch.shape) == 5:  # (B, T, C, H, W) - temporal frames
             pass  # Already correct shape
+        elif len(batch.shape) == 6:  # (B, ?, ?, C, H, W) - complex batch structure
+            # Extract the image dimensions (last 3 dimensions)
+            # Assuming the format is [B, ?, ?, C, H, W]
+            batch_size = batch.shape[0]
+            channels = batch.shape[-3]
+            height = batch.shape[-2]
+            width = batch.shape[-1]
+            
+            # Reshape to (B, T, C, H, W) where T = product of middle dimensions
+            middle_dims = batch.shape[1:-3]
+            temporal_frames = np.prod(middle_dims)
+            
+            # Reshape the batch
+            batch = batch.view(batch_size, temporal_frames, channels, height, width)
+            print(f"DEBUG: Reshaped batch to: {batch.shape}")
         else:
-            raise ValueError(f"Unexpected batch shape: {batch.shape}. Expected (B, C, H, W) or (B, T, C, H, W)")
+            raise ValueError(f"Unexpected batch shape: {batch.shape}. Expected (B, C, H, W), (B, T, C, H, W), or 6D batch")
         
         with torch.no_grad():
             batch = batch.to(self.device)

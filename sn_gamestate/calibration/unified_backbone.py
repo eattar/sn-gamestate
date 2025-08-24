@@ -171,7 +171,7 @@ class UnifiedBackboneModule(ImageLevelModule):
     
     input_columns = []
     output_columns = {
-        "detection": ["bbox_ltwh", "confidence", "bbox_pitch", "keypoints_conf", "role", "track_id", "video_id"],
+        "detection": ["bbox_ltwh", "confidence", "bbox_pitch", "keypoints_conf", "role", "track_id", "video_id", "category_id"],
         "pitch": ["lines", "keypoints"],
         "image": ["parameters"]
     }
@@ -365,7 +365,8 @@ class UnifiedBackboneModule(ImageLevelModule):
                 "keypoints_conf": 1.0,  # Add missing keypoints confidence
                 "role": "player",  # Add role for team classification
                 "track_id": np.nan,  # Add track_id for tracking
-                "video_id": current_metadata.get("video_id", "unknown")  # Add video_id from metadata
+                "video_id": current_metadata.get("video_id", "unknown"),  # Add video_id from metadata
+                "category_id": 1  # Add category_id for evaluation (1 = person class)
             })
         
         result_df = pd.DataFrame(detection_data)

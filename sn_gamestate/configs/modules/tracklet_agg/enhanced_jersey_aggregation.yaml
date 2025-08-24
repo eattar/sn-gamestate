@@ -1,0 +1,5 @@
+_target_: sn_gamestate.jersey.enhanced_tracklet_aggregation.EnhancedTrackletAggregation
+min_tracklet_length: 3  # Minimum number of frames required for enhanced aggregation
+confidence_threshold: 0.5  # Minimum confidence threshold for final jersey number
+temporal_decay: 0.9  # Temporal decay factor for frame weighting
+spatial_threshold: 10.0  # Spatial threshold in meters for movement consistency

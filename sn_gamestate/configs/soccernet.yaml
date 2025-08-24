@@ -39,6 +39,10 @@ pipeline:
 # Experiment name
 experiment_name: "sn-gamestate-unified"
 
+# configure Hydra to use the current working directory
+# and set up the output directory according to experiment_name
+project_dir: "${hydra:runtime.cwd}"
+
 # Path definitions
 home_dir: "${oc.env:HOME}"
 data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
@@ -90,9 +94,7 @@ visualization:
   cfg:
     save_videos: True  # Save a .mp4 video on disk with the game state reconstruction output (see 'tracklab/tracklab/configs/visualization' for more options)
 
-# configure Hydra to use the current working directory
-# and set up the output directory according to experiment_name
-project_dir: "${hydra:runtime.cwd}"
+# Hydra configuration
 hydra:
   output_subdir: "configs"
   job:

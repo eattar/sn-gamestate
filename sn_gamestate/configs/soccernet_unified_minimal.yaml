@@ -1,0 +1,61 @@
+# TrackLab SoccerNet config with Unified Backbone - Minimal Version
+# This is a simplified configuration to test the unified backbone
+
+defaults:
+  - dataset: soccernet_gs
+  - eval: gs_hota
+  - engine: offline
+  - visualization: gamestate
+  
+  # Only unified backbone - minimal modules
+  - modules/unified_backbone: unified_backbone
+  
+  - _self_
+
+# Simple pipeline with just unified backbone
+pipeline:
+  - unified_backbone
+
+# Experiment name
+experiment_name: "sn-gamestate-unified-minimal"
+
+# Basic configuration
+project_dir: "${hydra:runtime.cwd}"
+data_dir: "/netscratch/eattar/ds/SoccerNet/2024/data"
+
+# Machine configuration
+num_cores: 1
+use_wandb: False  # Disable wandb for testing
+use_rich: True
+
+modules:
+  unified_backbone: 
+    batch_size: 1
+    backbone_type: "resnet50"
+    temporal_frames: 3  # Reduced for testing
+    use_attention: false  # Disable for testing
+    detection_threshold: 0.5
+    pitch_threshold: 0.3
+
+# Flags
+test_tracking: False
+eval_tracking: False
+print_config: True
+
+# Dataset - minimal
+dataset:
+  nvid: 1  # Only first video
+  eval_set: "valid"
+  dataset_path: ${data_dir}/SoccerNetGS
+  vids_dict:
+    valid: []
+
+# Hydra configuration
+hydra:
+  output_subdir: "configs"
+  job:
+    chdir: True
+  run:
+    dir: "/netscratch/eattar/SoccerNet/outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+  sweep:
+    dir: "multirun_outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}"

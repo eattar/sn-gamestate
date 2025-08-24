@@ -486,7 +486,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
             else:
                 roles.append('player')  # Default to player if no jersey number
         
-        detections['role'] = roles
+        detections['role_detection'] = roles
         
         return detections
 

@@ -3,7 +3,7 @@
 # The defaults list contains the files that will be used
 # to create the final config file. This item *must* be
 # the first element in the file.
-# Detailed configs for each default component below are located in "sn-gamestate/sn-gamestate/configs" and "tracklab/tracklab/configs"
+# Detailed configs for each default component below are located in "sn-gamestate/sn_gamestate/configs" and "tracklab/tracklab/configs"
 # Define here which implementation (yolov8, oc_sort, ..) to use for each generic (detection, tracking, ...) component.
 defaults:
   - dataset: soccernet_gs

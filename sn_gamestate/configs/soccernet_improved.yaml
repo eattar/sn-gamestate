@@ -16,7 +16,7 @@ defaults:
   - modules/jersey_number_detect: improved_mmocr  # Using improved jersey recognition
   - modules/team: kmeans_embeddings
   - modules/team_side: mean_position
-  - modules/tracklet_agg: enhanced_jersey_aggregation  # Using enhanced aggregation
+  - modules/tracklet_agg: voting_role_jn  # Using baseline aggregation since improved module handles tracklet-level processing
   - modules/pitch : nbjw_calib
   - modules/calibration: nbjw_calib
   - _self_

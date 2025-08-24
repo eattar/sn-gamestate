@@ -118,6 +118,48 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         spatial_consistency = max(0, 1 - variance / 1000)
         return spatial_consistency
 
+    def aggregate_tracklet_jersey_simple(self, tracklet_id: int, 
+                                       jersey_numbers: List[str], 
+                                       confidences: List[float]) -> Tuple[str, float]:
+        """Simplified aggregation of jersey numbers across a tracklet sequence (no spatial analysis)."""
+        if not jersey_numbers:
+            return self.no_jersey_number()
+        
+        # Filter out low confidence detections
+        valid_indices = [i for i, conf in enumerate(confidences) 
+                        if conf >= self.min_confidence_threshold]
+        
+        if not valid_indices:
+            return self.no_jersey_number()
+        
+        filtered_numbers = [jersey_numbers[i] for i in valid_indices]
+        filtered_confidences = [confidences[i] for i in valid_indices]
+        
+        # Compute temporal consistency
+        temporal_consistency = self.compute_temporal_consistency(
+            filtered_numbers, filtered_confidences)
+        
+        # Find the most frequent jersey number
+        number_counts = defaultdict(int)
+        for num in filtered_numbers:
+            if self.validate_jersey_number(num):
+                number_counts[num] += 1
+        
+        if not number_counts:
+            return self.no_jersey_number()
+        
+        # Get the most frequent number
+        most_frequent_number = max(number_counts.items(), key=lambda x: x[1])[0]
+        
+        # Compute final confidence based on frequency and temporal consistency
+        frequency_score = number_counts[most_frequent_number] / len(filtered_numbers)
+        final_confidence = (frequency_score * 0.7 + temporal_consistency * 0.3)
+        
+        # Ensure confidence is in [0, 1] range
+        final_confidence = np.clip(final_confidence, 0.0, 1.0)
+        
+        return most_frequent_number, final_confidence
+
     def aggregate_tracklet_jersey(self, tracklet_id: int, 
                                 jersey_numbers: List[str], 
                                 confidences: List[float],
@@ -251,9 +293,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
     @torch.no_grad()
     def process(self, batch, detections: pd.DataFrame, metadatas: pd.DataFrame):
         """Process a batch of detections with improved jersey recognition."""
-        # Extract track IDs and bboxes
+        # Extract track IDs
         track_ids = detections['track_id'].values if 'track_id' in detections.columns else [None] * len(detections)
-        bboxes = [det.bbox for det in detections.itertuples()]
         
         # Run OCR inference
         images_np = [img.cpu().numpy() for img in batch['img']]
@@ -263,7 +304,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         jersey_number_detection = []
         jersey_number_confidence = []
         
-        for i, (prediction, track_id, bbox) in enumerate(zip(predictions, track_ids, bboxes)):
+        for i, (prediction, track_id) in enumerate(zip(predictions, track_ids)):
             # Extract frame-level jersey number
             jn, conf = self.extract_jersey_numbers_from_ocr(prediction)
             
@@ -272,7 +313,6 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                 self.tracklet_sequences[track_id].append({
                     'jersey_number': jn,
                     'confidence': conf,
-                    'bbox': bbox,
                     'frame_idx': i
                 })
                 
@@ -285,11 +325,10 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                     sequence_data = self.tracklet_sequences[track_id]
                     jn_numbers = [item['jersey_number'] for item in sequence_data]
                     jn_confs = [item['confidence'] for item in sequence_data]
-                    jn_bboxes = [item['bbox'] for item in sequence_data]
                     
-                    # Aggregate at tracklet level
-                    tracklet_jn, tracklet_conf = self.aggregate_tracklet_jersey(
-                        track_id, jn_numbers, jn_confs, jn_bboxes)
+                    # Aggregate at tracklet level (simplified without spatial analysis)
+                    tracklet_jn, tracklet_conf = self.aggregate_tracklet_jersey_simple(
+                        track_id, jn_numbers, jn_confs)
                     
                     jersey_number_detection.append(tracklet_jn)
                     jersey_number_confidence.append(tracklet_conf)

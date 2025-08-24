@@ -486,7 +486,9 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
             else:
                 roles.append('player')  # Default to player if no jersey number
         
-        detections['role_detection'] = roles
+        # Output both role columns to satisfy different module requirements
+        detections['role_detection'] = roles  # For prtreid compatibility
+        detections['role'] = roles           # For TrackletTeamClustering
         
         return detections
 

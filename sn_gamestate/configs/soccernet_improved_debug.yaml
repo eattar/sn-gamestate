@@ -11,7 +11,6 @@ defaults:
   - modules/jersey_number_detect: improved_mmocr
   - modules/team: kmeans_embeddings
   - modules/team_side: mean_position
-  - modules/tracklet_agg: voting_role_jn
   - modules/pitch : nbjw_calib
   - modules/calibration: nbjw_calib
   - _self_
@@ -23,7 +22,6 @@ pipeline:
   - pitch
   - calibration
   - jersey_number_detect
-  - tracklet_agg
   - team
   - team_side
 

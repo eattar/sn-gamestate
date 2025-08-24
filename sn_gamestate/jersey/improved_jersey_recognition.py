@@ -470,6 +470,24 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         detections['jersey_number_detection'] = jersey_number_detection
         detections['jersey_number_confidence'] = jersey_number_confidence
         
+        # Add role attribute that team modules expect (simple assignment based on jersey number)
+        roles = []
+        for jn in jersey_number_detection:
+            if jn is not None and jn != '':
+                # Simple role assignment: jersey numbers 1-11 are typically players
+                try:
+                    jn_int = int(jn)
+                    if 1 <= jn_int <= 11:
+                        roles.append('player')
+                    else:
+                        roles.append('player')  # Default to player for other numbers
+                except ValueError:
+                    roles.append('player')  # Default to player if not a number
+            else:
+                roles.append('player')  # Default to player if no jersey number
+        
+        detections['role'] = roles
+        
         return detections
 
     def reset_tracklet_sequences(self):

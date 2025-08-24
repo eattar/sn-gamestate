@@ -30,7 +30,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
     def __init__(self, batch_size, device, tracking_dataset=None, 
                  sequence_length=5, min_confidence_threshold=0.3,
                  temporal_weight=0.7, spatial_weight=0.3,
-                 use_confidence_boost=True, min_sequence_confidence=0.4):
+                 use_confidence_boost=True, min_sequence_confidence=0.4,
+                 enable_aggressive_boosting=True):
         
         super().__init__(batch_size=batch_size)
         self.device = device
@@ -41,6 +42,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         self.spatial_weight = spatial_weight
         self.use_confidence_boost = use_confidence_boost
         self.min_sequence_confidence = min_sequence_confidence
+        self.enable_aggressive_boosting = enable_aggressive_boosting
         
         # Debug logging to verify parameters
         log.info(f"ImprovedJerseyRecognition initialized with:")
@@ -50,6 +52,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - spatial_weight: {self.spatial_weight}")
         log.info(f"  - use_confidence_boost: {self.use_confidence_boost}")
         log.info(f"  - min_sequence_confidence: {self.min_sequence_confidence}")
+        log.info(f"  - enable_aggressive_boosting: {self.enable_aggressive_boosting}")
         log.info(f"  - device: {self.device}")
         log.info(f"  - batch_size: {self.batch_size}")
         
@@ -157,7 +160,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         return pred_results
 
     def aggregate_tracklet_sequence(self, track_id: int, jersey_numbers: List, confidences: List, frame_indices: List) -> Tuple[Optional[str], float]:
-        """Advanced temporal aggregation with confidence boosting and fallback strategies"""
+        """Advanced temporal aggregation with aggressive confidence boosting and fallback strategies"""
         if not jersey_numbers or all(jn is None for jn in jersey_numbers):
             return None, 0.0
         
@@ -190,29 +193,48 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         avg_confidence = np.mean([conf for conf, _ in best_detections])
         max_confidence = max([conf for conf, _ in best_detections])
         
-        # Confidence boosting for consistent detections
-        if self.use_confidence_boost and temporal_score >= 0.6:
-            # Boost confidence for highly consistent detections
-            consistency_boost = min(0.2, temporal_score - 0.5)  # Max 0.2 boost
-            boosted_confidence = min(1.0, avg_confidence + consistency_boost)
-        else:
-            boosted_confidence = avg_confidence
+        # Enhanced confidence boosting strategies
+        boosted_confidence = avg_confidence
+        
+        if self.use_confidence_boost:
+            # Strategy 1: Consistency-based boosting
+            if temporal_score >= 0.5:  # 50% consistency threshold
+                consistency_boost = min(0.3, temporal_score - 0.3)  # Max 0.3 boost
+                boosted_confidence = min(1.0, avg_confidence + consistency_boost)
+            
+            # Strategy 2: High-confidence single detection boosting
+            if max_confidence >= 0.8 and temporal_score >= 0.25:
+                high_confidence_boost = min(0.2, max_confidence - 0.7)  # Boost for high confidence
+                boosted_confidence = min(1.0, boosted_confidence + high_confidence_boost)
+            
+            # Strategy 3: Aggressive boosting for very high individual confidences
+            if self.enable_aggressive_boosting and max_confidence >= 0.9:
+                aggressive_boost = min(0.4, max_confidence - 0.8)  # Aggressive boost
+                boosted_confidence = min(1.0, boosted_confidence + aggressive_boost)
         
         # Calculate sequence quality score
         sequence_quality = self._calculate_sequence_quality(jersey_numbers, confidences, frame_indices)
         
-        # Combine all factors for final confidence
-        final_confidence = (
+        # Enhanced final confidence calculation
+        base_confidence = (
             self.temporal_weight * temporal_score + 
-            self.spatial_weight * boosted_confidence +
-            0.1 * sequence_quality  # Small weight for sequence quality
+            self.spatial_weight * boosted_confidence
         )
+        
+        # Quality bonus for good sequences
+        quality_bonus = 0.1 * sequence_quality
+        
+        # Consistency bonus for temporal consistency
+        consistency_bonus = 0.05 * temporal_score if temporal_score >= 0.25 else 0
+        
+        final_confidence = base_confidence + quality_bonus + consistency_bonus
         
         # Apply minimum sequence confidence threshold
         if final_confidence < self.min_sequence_confidence:
-            # Fallback to best single detection
+            # Fallback to best single detection with confidence boost
             best_single = max(valid_detections, key=lambda x: x[1])
-            return best_single[0], best_single[1]
+            fallback_confidence = min(1.0, best_single[1] * 1.1)  # 10% boost for fallback
+            return best_single[0], fallback_confidence
         
         # Ensure confidence is in valid range
         final_confidence = np.clip(final_confidence, 0.0, 1.0)
@@ -226,6 +248,9 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - Avg confidence: {avg_confidence:.3f}")
         log.info(f"  - Boosted confidence: {boosted_confidence:.3f}")
         log.info(f"  - Sequence quality: {sequence_quality:.3f}")
+        log.info(f"  - Base confidence: {base_confidence:.3f}")
+        log.info(f"  - Quality bonus: {quality_bonus:.3f}")
+        log.info(f"  - Consistency bonus: {consistency_bonus:.3f}")
         log.info(f"  - Final confidence: {final_confidence:.3f}")
         
         return best_jn, final_confidence

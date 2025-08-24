@@ -394,6 +394,10 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
             
             # Store in tracklet sequence if we have a track ID
             if track_id is not None and not pd.isna(track_id):
+                # Initialize tracklet sequence if it doesn't exist
+                if track_id not in self.tracklet_sequences:
+                    self.tracklet_sequences[track_id] = []
+                
                 # Store the frame-level result in tracklet sequence
                 self.tracklet_sequences[track_id].append({
                     'jersey_number': jn,
@@ -401,18 +405,14 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                     'frame_idx': i
                 })
                 
-                # Debug logging for tracklet 1.0 to see what's being stored
+                # Debug logging for tracklet 1 to see what's being stored
                 if track_id == 1:
                     log.info(f"Frame {i}: Stored jersey number {jn} with confidence {conf} for tracklet {track_id}")
                     log.info(f"  - Tracklet {track_id} now has {len(self.tracklet_sequences[track_id])} frames")
                     log.info(f"  - Current sequence: {[item['jersey_number'] for item in self.tracklet_sequences[track_id]]}")
                 
-                # Keep only recent frames in sequence
-                if len(self.tracklet_sequences[track_id]) > self.sequence_length:
-                    self.tracklet_sequences[track_id].pop(0)
-                
-                # If we have enough frames, compute tracklet-level prediction
-                if len(self.tracklet_sequences[track_id]) >= self.sequence_length:
+                # Only process when we have exactly the required number of frames
+                if len(self.tracklet_sequences[track_id]) == self.sequence_length:
                     sequence_data = self.tracklet_sequences[track_id]
                     jn_numbers = [item['jersey_number'] for item in sequence_data]
                     jn_confs = [item['confidence'] for item in sequence_data]
@@ -428,7 +428,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                         log.info(f"  - Confidences: {jn_confs}")
                         log.info(f"  - Frame indices: {[item['frame_idx'] for item in sequence_data]}")
                     
-                    # Aggregate at tracklet level (simplified without spatial analysis)
+                    # Aggregate at tracklet level
                     tracklet_jn, tracklet_conf = self.aggregate_tracklet_jersey_simple(
                         track_id, jn_numbers, jn_confs)
                     
@@ -436,8 +436,19 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                         log.info(f"  - Final jersey number: {tracklet_jn}")
                         log.info(f"  - Final confidence: {tracklet_conf}")
                     
+                    # Use tracklet-level prediction for this frame
                     jersey_number_detection.append(tracklet_jn)
                     jersey_number_confidence.append(tracklet_conf)
+                    
+                    # Remove the oldest frame to maintain sequence length
+                    self.tracklet_sequences[track_id].pop(0)
+                    
+                elif len(self.tracklet_sequences[track_id]) > self.sequence_length:
+                    # This shouldn't happen, but if it does, remove oldest frame
+                    self.tracklet_sequences[track_id].pop(0)
+                    # Use frame-level prediction for now
+                    jersey_number_detection.append(jn)
+                    jersey_number_confidence.append(conf)
                 else:
                     # Use frame-level prediction for now
                     if track_id == 1:  # Log for first tracklet

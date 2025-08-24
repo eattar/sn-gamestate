@@ -336,8 +336,8 @@ class UnifiedBackboneModule(ImageLevelModule):
         # Create detections from scratch using metadatas
         # This is a DetectionLevelModule, so we create initial detections
         for i in range(len(metadatas)):
-            # Create dummy bbox_ltwh (left, top, width, height)
-            bbox_ltwh = [100, 100, 50, 100]  # Dummy values
+            # Create dummy bbox_ltwh (left, top, width, height) as numpy array
+            bbox_ltwh = np.array([100, 100, 50, 100], dtype=np.float32)  # Convert to numpy array
             conf = 0.8  # Dummy confidence
             
             # Create dummy bbox_pitch using the existing function

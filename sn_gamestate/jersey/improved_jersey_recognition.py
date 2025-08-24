@@ -490,6 +490,22 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         detections['role_detection'] = roles  # For prtreid compatibility
         detections['role'] = roles           # For TrackletTeamClustering
         
+        # Ensure role column is properly set and persists
+        if 'role_detection' in detections.columns and 'role' in detections.columns:
+            # Make sure both columns have the same values
+            detections['role'] = detections['role_detection'].copy()
+            log.info(f"Successfully set both role columns with {len(roles)} entries")
+        else:
+            log.error(f"Failed to set role columns properly!")
+            log.error(f"  - role_detection in columns: {'role_detection' in detections.columns}")
+            log.error(f"  - role in columns: {'role' in detections.columns}")
+        
+        # Debug logging to verify columns are present
+        log.info(f"ImprovedJerseyRecognition output columns: {list(detections.columns)}")
+        log.info(f"  - role_detection present: {'role_detection' in detections.columns}")
+        log.info(f"  - role present: {'role' in detections.columns}")
+        log.info(f"  - jersey_number_detection present: {'jersey_number_detection' in detections.columns}")
+        
         return detections
 
     def reset_tracklet_sequences(self):

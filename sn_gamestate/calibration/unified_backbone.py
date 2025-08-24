@@ -6,7 +6,7 @@ import numpy as np
 import logging
 from typing import Any, Dict, Tuple, List
 
-from tracklab.pipeline import DetectionLevelModule
+from tracklab.pipeline import ImageLevelModule
 from tracklab.utils.collate import default_collate
 from sn_calibration_baseline.camera import Camera
 
@@ -163,7 +163,7 @@ class SpatioTemporalBackbone(nn.Module):
         }
 
 
-class UnifiedBackboneModule(DetectionLevelModule):
+class UnifiedBackboneModule(ImageLevelModule):
     """
     TrackLab module that uses the unified spatio-temporal backbone.
     This replaces the separate bbox_detector, pitch, and calibration modules.
@@ -216,12 +216,13 @@ class UnifiedBackboneModule(DetectionLevelModule):
         self.frame_buffer = []
         self.max_buffer_size = temporal_frames
     
-    def preprocess(self, image: np.ndarray, metadata: pd.Series) -> torch.Tensor:
+    def preprocess(self, image: np.ndarray, detections: pd.DataFrame, metadata: pd.Series) -> torch.Tensor:
         """
         Preprocess image for the unified backbone.
         """
         print(f"DEBUG: UnifiedBackboneModule.preprocess() called!")
         print(f"DEBUG: image shape: {image.shape}")
+        print(f"DEBUG: detections shape: {detections.shape if detections is not None else 'None'}")
         print(f"DEBUG: metadata type: {type(metadata)}")
         print(f"DEBUG: metadata content: {metadata}")
         
@@ -250,12 +251,13 @@ class UnifiedBackboneModule(DetectionLevelModule):
         
         return temporal_input
     
-    def process(self, batch: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
+    def process(self, batch: torch.Tensor, detections: pd.DataFrame, metadatas: pd.DataFrame) -> pd.DataFrame:
         """
         Process batch through the unified backbone and return detection outputs.
         """
         print(f"DEBUG: UnifiedBackboneModule.process() called!")
         print(f"DEBUG: batch shape: {batch.shape}")
+        print(f"DEBUG: detections shape: {detections.shape if detections is not None else 'None'}")
         print(f"DEBUG: metadatas shape: {metadatas.shape}")
         print(f"DEBUG: metadatas columns: {metadatas.columns.tolist()}")
         print(f"DEBUG: metadatas index: {metadatas.index.tolist()}")

@@ -22,8 +22,6 @@ pipeline:
   - pitch
   - calibration
   - jersey_number_detect
-  - team
-  - team_side
 
 experiment_name: "sn-gamestate-improved-debug"
 

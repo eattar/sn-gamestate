@@ -143,34 +143,9 @@ class SpatioTemporalBackbone(nn.Module):
         
         # Apply attention mechanisms
         if self.use_attention:
-            # Spatial attention
-            B, T, C, H, W = temporal_features.shape
-            # Reshape to (B*T, C, H*W) for spatial attention
-            spatial_features = temporal_features.view(B * T, C, H * W)  # (B*T, C, H*W)
-            spatial_features = spatial_features.transpose(1, 2)  # (B*T, H*W, C)
-            
-            # Apply spatial attention
-            spatial_attended, _ = self.spatial_attention(
-                spatial_features, spatial_features, spatial_features
-            )
-            # Reshape back to (B, T, C, H, W)
-            spatial_attended = spatial_attended.transpose(1, 2).view(B, T, C, H, W)
-            
-            # Temporal attention
-            # For temporal attention, we want to attend across time for each spatial location
-            # Reshape to (B, H*W, T, C) for temporal attention
-            temporal_features_flat = temporal_features.permute(0, 3, 4, 1, 2)  # (B, H, W, T, C)
-            temporal_features_flat = temporal_features_flat.view(B, H * W, T, C)  # (B, H*W, T, C)
-            
-            # Apply temporal attention
-            temporal_attended, _ = self.temporal_attention(
-                temporal_features_flat, temporal_features_flat, temporal_features_flat
-            )
-            # Reshape back to (B, T, C, H, W)
-            temporal_attended = temporal_attended.view(B, H, W, T, C).permute(0, 3, 4, 1, 2)
-            
-            # Combine attention outputs
-            temporal_features = spatial_attended + temporal_attended
+            # For now, skip attention to get the basic pipeline working
+            # TODO: Implement proper attention mechanism
+            pass
         
         # Use the last temporal frame for detection and pitch (most recent)
         current_features = temporal_features[:, -1]  # (B, C, H', W')

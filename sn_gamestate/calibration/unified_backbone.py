@@ -293,6 +293,12 @@ class UnifiedBackboneModule(ImageLevelModule):
         """
         Process detection outputs to extract bounding boxes and confidence scores.
         """
+        # Add debugging to see what's being passed
+        print(f"DEBUG: _process_detections called with detections shape: {detections.shape}")
+        print(f"DEBUG: detections columns: {detections.columns.tolist()}")
+        print(f"DEBUG: detections index: {detections.index.tolist()}")
+        print(f"DEBUG: detections empty: {detections.empty}")
+        
         # detection_output shape: (B, 5, H, W) - 4 bbox coords + 1 confidence
         
         # Apply sigmoid to confidence
@@ -308,15 +314,12 @@ class UnifiedBackboneModule(ImageLevelModule):
         # In practice, you'd implement proper anchor-based detection
         detection_data = []
         
-        # Create dummy detections for testing
-        # This should be replaced with actual detection logic
-        for i in range(len(detections)):
-            # Create dummy bbox_ltwh (left, top, width, height)
+        # Handle case where detections DataFrame is empty
+        if detections.empty:
+            print("DEBUG: detections DataFrame is empty, creating default detection")
+            # Create a default detection with a default image_id
             bbox_ltwh = [100, 100, 50, 100]  # Dummy values
             conf = 0.8  # Dummy confidence
-            
-            # Create dummy bbox_pitch using the existing function
-            # For now, create a simple structure that matches expected format
             bbox_pitch = {
                 "x_bottom_left": 0.0,
                 "y_bottom_left": 0.0,
@@ -326,17 +329,45 @@ class UnifiedBackboneModule(ImageLevelModule):
                 "y_bottom_middle": 0.0
             }
             
-            # Get the image_id from the input detections DataFrame
-            image_id = detections.iloc[i].name if i < len(detections) else f"frame_{i}"
-            
             detection_data.append({
-                "image_id": image_id,
+                "image_id": "default_frame",
                 "bbox_ltwh": bbox_ltwh,
                 "confidence": conf,
                 "bbox_pitch": bbox_pitch
             })
+        else:
+            # Create dummy detections for testing
+            # This should be replaced with actual detection logic
+            for i in range(len(detections)):
+                # Create dummy bbox_ltwh (left, top, width, height)
+                bbox_ltwh = [100, 100, 50, 100]  # Dummy values
+                conf = 0.8  # Dummy confidence
+                
+                # Create dummy bbox_pitch using the existing function
+                # For now, create a simple structure that matches expected format
+                bbox_pitch = {
+                    "x_bottom_left": 0.0,
+                    "y_bottom_left": 0.0,
+                    "x_bottom_right": 10.0,
+                    "y_bottom_right": 0.0,
+                    "x_bottom_middle": 5.0,
+                    "y_bottom_middle": 0.0
+                }
+                
+                # Get the image_id from the input detections DataFrame
+                image_id = detections.iloc[i].name if i < len(detections) else f"frame_{i}"
+                
+                detection_data.append({
+                    "image_id": image_id,
+                    "bbox_ltwh": bbox_ltwh,
+                    "confidence": conf,
+                    "bbox_pitch": bbox_pitch
+                })
         
-        return pd.DataFrame(detection_data)
+        result_df = pd.DataFrame(detection_data)
+        print(f"DEBUG: Returning detection DataFrame with shape: {result_df.shape}")
+        print(f"DEBUG: Result columns: {result_df.columns.tolist()}")
+        return result_df
     
     def _process_pitch(self, pitch_output: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
         """

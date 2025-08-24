@@ -6,7 +6,7 @@ import numpy as np
 import logging
 from typing import Any, Dict, Tuple, List
 
-from tracklab.pipeline import ImageLevelModule
+from tracklab.pipeline import DetectionLevelModule
 from tracklab.utils.collate import default_collate
 from sn_calibration_baseline.camera import Camera
 
@@ -163,7 +163,7 @@ class SpatioTemporalBackbone(nn.Module):
         }
 
 
-class UnifiedBackboneModule(ImageLevelModule):
+class UnifiedBackboneModule(DetectionLevelModule):
     """
     TrackLab module that uses the unified spatio-temporal backbone.
     This replaces the separate bbox_detector, pitch, and calibration modules.
@@ -214,7 +214,7 @@ class UnifiedBackboneModule(ImageLevelModule):
         self.frame_buffer = []
         self.max_buffer_size = temporal_frames
     
-    def preprocess(self, image: np.ndarray, detections: pd.DataFrame, metadata: pd.Series) -> torch.Tensor:
+    def preprocess(self, image: np.ndarray, metadata: pd.Series) -> torch.Tensor:
         """
         Preprocess image for the unified backbone.
         """
@@ -243,7 +243,7 @@ class UnifiedBackboneModule(ImageLevelModule):
         
         return temporal_input
     
-    def process(self, batch: torch.Tensor, detections: pd.DataFrame, metadatas: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def process(self, batch: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
         """
         Process batch through the unified backbone and return detection and calibration outputs.
         """
@@ -278,26 +278,22 @@ class UnifiedBackboneModule(ImageLevelModule):
             print(f"DEBUG: Batch shape before model: {batch.shape}")
             outputs = self.model(batch)
         
-        # Process detection outputs
-        detection_outputs = self._process_detections(outputs['detection'], detections)
+        # Process detection outputs - create detections from scratch
+        detection_outputs = self._process_detections(outputs['detection'], metadatas)
         
-        # Process pitch outputs
-        pitch_outputs = self._process_pitch(outputs['pitch'], metadatas)
-        
-        # Process calibration outputs
-        calibration_outputs = self._process_calibration(outputs['calibration'], metadatas)
-        
-        return detection_outputs, calibration_outputs
+        # For DetectionLevelModule, we only return detections
+        # Pitch and calibration outputs will be handled by separate modules
+        return detection_outputs
     
-    def _process_detections(self, detection_output: torch.Tensor, detections: pd.DataFrame) -> pd.DataFrame:
+    def _process_detections(self, detection_output: torch.Tensor, metadatas: pd.DataFrame) -> pd.DataFrame:
         """
         Process detection outputs to extract bounding boxes and confidence scores.
         """
         # Add debugging to see what's being passed
-        print(f"DEBUG: _process_detections called with detections shape: {detections.shape}")
-        print(f"DEBUG: detections columns: {detections.columns.tolist()}")
-        print(f"DEBUG: detections index: {detections.index.tolist()}")
-        print(f"DEBUG: detections empty: {detections.empty}")
+        print(f"DEBUG: _process_detections called with metadatas shape: {metadatas.shape}")
+        print(f"DEBUG: metadatas columns: {metadatas.columns.tolist()}")
+        print(f"DEBUG: metadatas index: {metadatas.index.tolist()}")
+        print(f"DEBUG: metadatas empty: {metadatas.empty}")
         
         # detection_output shape: (B, 5, H, W) - 4 bbox coords + 1 confidence
         
@@ -314,12 +310,15 @@ class UnifiedBackboneModule(ImageLevelModule):
         # In practice, you'd implement proper anchor-based detection
         detection_data = []
         
-        # Handle case where detections DataFrame is empty
-        if detections.empty:
-            print("DEBUG: detections DataFrame is empty, creating default detection")
-            # Create a default detection with a default image_id
+        # Create detections from scratch using metadatas
+        # This is a DetectionLevelModule, so we create initial detections
+        for i in range(len(metadatas)):
+            # Create dummy bbox_ltwh (left, top, width, height)
             bbox_ltwh = [100, 100, 50, 100]  # Dummy values
             conf = 0.8  # Dummy confidence
+            
+            # Create dummy bbox_pitch using the existing function
+            # For now, create a simple structure that matches expected format
             bbox_pitch = {
                 "x_bottom_left": 0.0,
                 "y_bottom_left": 0.0,
@@ -329,40 +328,15 @@ class UnifiedBackboneModule(ImageLevelModule):
                 "y_bottom_middle": 0.0
             }
             
+            # Get the image_id from the metadatas DataFrame
+            image_id = metadatas.iloc[i].name if i < len(metadatas) else f"frame_{i}"
+            
             detection_data.append({
-                "image_id": "default_frame",
+                "image_id": image_id,
                 "bbox_ltwh": bbox_ltwh,
                 "confidence": conf,
                 "bbox_pitch": bbox_pitch
             })
-        else:
-            # Create dummy detections for testing
-            # This should be replaced with actual detection logic
-            for i in range(len(detections)):
-                # Create dummy bbox_ltwh (left, top, width, height)
-                bbox_ltwh = [100, 100, 50, 100]  # Dummy values
-                conf = 0.8  # Dummy confidence
-                
-                # Create dummy bbox_pitch using the existing function
-                # For now, create a simple structure that matches expected format
-                bbox_pitch = {
-                    "x_bottom_left": 0.0,
-                    "y_bottom_left": 0.0,
-                    "x_bottom_right": 10.0,
-                    "y_bottom_right": 0.0,
-                    "x_bottom_middle": 5.0,
-                    "y_bottom_middle": 0.0
-                }
-                
-                # Get the image_id from the input detections DataFrame
-                image_id = detections.iloc[i].name if i < len(detections) else f"frame_{i}"
-                
-                detection_data.append({
-                    "image_id": image_id,
-                    "bbox_ltwh": bbox_ltwh,
-                    "confidence": conf,
-                    "bbox_pitch": bbox_pitch
-                })
         
         result_df = pd.DataFrame(detection_data)
         print(f"DEBUG: Returning detection DataFrame with shape: {result_df.shape}")

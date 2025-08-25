@@ -1,0 +1,49 @@
+defaults:
+  - soccernet
+  - _self_
+
+# 🚀 BASELINE + JERSEY ENHANCEMENT: Achieve >38% GS-HOTA
+# Goal: Use proven baseline approach but add sequence-aware jersey recognition
+
+# Machine configuration
+use_wandb: True
+use_rich: True
+
+# Dataset configuration for focused processing
+dataset:
+  nvid: 1  # Process only 1 video for focused optimization
+  eval_set: "valid"  # Use validation set
+  vids_dict:
+    valid: []  # Let it auto-select the best video
+
+# BASELINE + JERSEY ENHANCEMENT: Keep baseline stability, add jersey innovation
+modules:
+  # 🎯 KEY INNOVATION: Use improved jersey recognition for better accuracy
+  jersey_number_detect:
+    _target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
+    batch_size: 16
+    sequence_length: 7
+    min_confidence_threshold: 0.15
+    min_sequence_confidence: 0.25
+    temporal_weight: 0.8
+    spatial_weight: 0.2
+    use_confidence_boost: true
+    enable_aggressive_boosting: true
+  
+  # 🔧 Keep all other modules as baseline (proven to work)
+  # bbox_detector: default from soccernet.yaml
+  # reid: default from soccernet.yaml  
+  # track: default from soccernet.yaml
+  # pitch: default from soccernet.yaml
+  # calibration: default from soccernet.yaml
+  # tracklet_agg: default from soccernet.yaml
+  # team: default from soccernet.yaml
+  # team_side: default from soccernet.yaml
+
+# Visualization for analysis
+visualization:
+  cfg:
+    save_videos: True  # Save videos for analysis
+
+# Experiment naming
+experiment_name: "sn-gamestate-baseline-plus-jersey"

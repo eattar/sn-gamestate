@@ -196,6 +196,9 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         # Enhanced confidence boosting strategies
         boosted_confidence = avg_confidence
         
+        # Get valid confidences for stability analysis
+        valid_confidences = [conf for conf in confidences if conf > 0]
+        
         if self.use_confidence_boost:
             # Strategy 1: Consistency-based boosting
             if temporal_score >= 0.5:  # 50% consistency threshold
@@ -226,6 +229,9 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         
         # Calculate sequence quality score
         sequence_quality = self._calculate_sequence_quality(jersey_numbers, confidences, frame_indices)
+        
+        # Calculate frame spacings for debug logging
+        frame_spacings = [frame_indices[i+1] - frame_indices[i] for i in range(len(frame_indices)-1)] if len(frame_indices) > 1 else []
         
         # Enhanced final confidence calculation
         base_confidence = (

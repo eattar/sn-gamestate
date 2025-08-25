@@ -1,0 +1,47 @@
+defaults:
+  - soccernet
+  - _self_
+
+# 🚀 HYBRID CONFIGURATION: Baseline + Improved Jersey Recognition
+# Goal: Achieve >38% GS-HOTA by combining baseline stability with sequence-aware jersey recognition
+
+# Machine configuration
+use_wandb: True
+use_rich: True
+
+# Dataset configuration for focused processing
+dataset:
+  nvid: 1  # Process only 1 video for focused optimization
+  eval_set: "valid"  # Use validation set
+  vids_dict:
+    valid: []  # Let it auto-select the best video
+
+# HYBRID APPROACH: Combine baseline stability with jersey improvements
+modules:
+  # 🎯 KEY INNOVATION: Use improved jersey recognition for better accuracy
+  jersey_number_detect: improved_mmocr_simple
+  
+  # 🔧 Use optimized ReID configuration from successful baseline
+  reid: prtreid_baseline_38
+  
+  # 🎯 Optimize detection parameters for better recall (key to 38% success)
+  bbox_detector:
+    batch_size: 4  # Smaller batch for better memory usage
+    conf_threshold: 0.15  # Even lower confidence threshold for maximum recall
+    iou_threshold: 0.45  # Balanced IoU threshold
+  
+  # 🚀 Optimize ReID for better association
+  reid:
+    batch_size: 32  # Balanced batch size for ReID
+  
+  # 🎯 Optimize tracking parameters
+  track:
+    batch_size: 32  # Balanced batch size for tracking
+
+# Visualization for analysis
+visualization:
+  cfg:
+    save_videos: True  # Save videos for analysis
+
+# Experiment naming
+experiment_name: "sn-gamestate-hybrid-38-plus"

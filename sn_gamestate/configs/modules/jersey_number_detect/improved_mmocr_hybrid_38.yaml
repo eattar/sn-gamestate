@@ -1,0 +1,21 @@
+_target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
+
+# 🚀 HYBRID JERSEY RECOGNITION: Optimized for >38% GS-HOTA
+# Combines sequence-aware processing with baseline-tuned parameters
+
+# Core processing parameters
+batch_size: 16  # Optimized batch size for jersey detection
+sequence_length: 7  # Longer sequences for better temporal aggregation
+min_confidence_threshold: 0.15  # Lower threshold for maximum recall (like baseline)
+min_sequence_confidence: 0.25  # Lower sequence confidence for more detections
+
+# Temporal vs spatial weighting (optimized based on baseline success)
+temporal_weight: 0.8  # Higher temporal weight for sequence consistency
+spatial_weight: 0.2  # Lower spatial weight (baseline was spatial-focused)
+
+# Confidence boosting (enabled for better performance)
+use_confidence_boost: true
+enable_aggressive_boosting: true
+
+# Advanced features for maximum performance
+# These parameters are supported by the ImprovedJerseyRecognition class

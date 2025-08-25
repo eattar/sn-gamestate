@@ -1,0 +1,81 @@
+# Fast optimized SoccerNet configuration
+# Balance: Speed + Detection Quality Improvement
+
+# Inherit from base configuration
+defaults:
+  - soccernet
+  - modules/jersey_number_detect/improved_mmocr_optimized
+  - _self_
+
+# Experiment configuration
+experiment_name: "sn-gamestate-improved-jersey-fast-optimized-v3"
+use_wandb: false
+use_rich: true
+
+# Dataset configuration
+dataset:
+  vids_dict:
+    valid: []  # Auto-select first available video
+
+# Core pipeline modules
+pipeline:
+  - bbox_detector
+  - reid
+  - track
+  - pitch
+  - calibration
+  - jersey_number_detect
+  - tracklet_agg
+  - team
+  - team_side
+
+# Balanced batch sizes (speed + quality)
+bbox_detector:
+  batch_size: 6  # Balanced between speed and quality
+  conf_threshold: 0.25  # Lower for more detections
+  iou_threshold: 0.45   # Optimized IoU
+
+pose_bottomup:
+  batch_size: 6  # Balanced
+
+reid:
+  batch_size: 48  # Keep fast for speed
+
+track:
+  batch_size: 48  # Keep fast for speed
+
+jersey_number_detect:
+  batch_size: 12  # Balanced for jersey detection
+
+# Detection optimization flags
+optimize_detection: true
+optimize_tracking: true
+optimize_jersey: true
+
+# Fast detection parameters
+detection:
+  enable_multi_scale: false  # Disable for speed
+  enable_tta: false
+  min_detection_size: 20
+  max_detection_size: 800
+
+# Fast tracking
+tracking:
+  enable_velocity_prediction: false  # Disable for speed
+  enable_appearance_matching: true
+  min_track_length: 3
+
+# Jersey optimization
+jersey_optimization:
+  enable_confidence_smoothing: true
+  enable_temporal_consistency: true
+  enable_quality_bonuses: true
+  min_sequence_quality: 0.3
+  min_temporal_score: 0.3
+
+# Performance monitoring
+monitoring:
+  log_detection_stats: true
+  log_tracking_stats: false  # Disable for speed
+  log_jersey_stats: true
+  save_intermediate_results: false  # Disable for speed

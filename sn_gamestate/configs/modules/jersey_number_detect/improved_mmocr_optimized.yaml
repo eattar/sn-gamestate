@@ -1,0 +1,31 @@
+# Optimized configuration for improved jersey recognition
+# Focus: Better detection recall and precision
+
+# Core parameters
+batch_size: 8  # Reduced for better quality
+sequence_length: 5  # Balanced between quality and coverage
+
+# Confidence thresholds - LOWER for more detections
+min_confidence_threshold: 0.1  # Was 0.15 - lower for more detections
+min_sequence_confidence: 0.2   # Was 0.25 - lower for more sequences
+
+# Temporal vs spatial weighting
+temporal_weight: 0.85  # Was 0.9 - slightly reduce temporal dominance
+spatial_weight: 0.15   # Was 0.1 - increase spatial importance
+
+# Confidence boosting strategies
+use_confidence_boost: true
+enable_aggressive_boosting: true
+
+# Quality thresholds
+min_quality_threshold: 0.3  # Lower threshold for sequence quality
+min_temporal_score: 0.3    # Lower threshold for temporal consistency
+
+# Advanced parameters
+enable_length_bonus: true      # Bonus for longer sequences
+enable_stability_bonus: true   # Bonus for stable confidence
+enable_consistency_bonus: true # Bonus for jersey consistency
+
+# Fallback strategies
+use_single_frame_fallback: true  # Use single frame when sequence fails
+min_single_frame_confidence: 0.4 # Minimum confidence for single frame

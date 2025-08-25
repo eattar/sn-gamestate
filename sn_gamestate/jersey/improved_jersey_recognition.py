@@ -31,7 +31,10 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                  sequence_length=5, min_confidence_threshold=0.3,
                  temporal_weight=0.7, spatial_weight=0.3,
                  use_confidence_boost=True, min_sequence_confidence=0.4,
-                 enable_aggressive_boosting=True):
+                 enable_aggressive_boosting=True, min_quality_threshold=0.3,
+                 min_temporal_score=0.3, enable_length_bonus=True,
+                 enable_stability_bonus=True, enable_consistency_bonus=True,
+                 use_single_frame_fallback=True, min_single_frame_confidence=0.4):
         
         super().__init__(batch_size=batch_size)
         self.device = device
@@ -44,6 +47,15 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         self.min_sequence_confidence = min_sequence_confidence
         self.enable_aggressive_boosting = enable_aggressive_boosting
         
+        # New optimization parameters
+        self.min_quality_threshold = min_quality_threshold
+        self.min_temporal_score = min_temporal_score
+        self.enable_length_bonus = enable_length_bonus
+        self.enable_stability_bonus = enable_stability_bonus
+        self.enable_consistency_bonus = enable_consistency_bonus
+        self.use_single_frame_fallback = use_single_frame_fallback
+        self.min_single_frame_confidence = min_single_frame_confidence
+        
         # Debug logging to verify parameters
         log.info(f"ImprovedJerseyRecognition initialized with:")
         log.info(f"  - sequence_length: {self.sequence_length}")
@@ -53,6 +65,13 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - use_confidence_boost: {self.use_confidence_boost}")
         log.info(f"  - min_sequence_confidence: {self.min_sequence_confidence}")
         log.info(f"  - enable_aggressive_boosting: {self.enable_aggressive_boosting}")
+        log.info(f"  - min_quality_threshold: {self.min_quality_threshold}")
+        log.info(f"  - min_temporal_score: {self.min_temporal_score}")
+        log.info(f"  - enable_length_bonus: {self.enable_length_bonus}")
+        log.info(f"  - enable_stability_bonus: {self.enable_stability_bonus}")
+        log.info(f"  - enable_consistency_bonus: {self.enable_consistency_bonus}")
+        log.info(f"  - use_single_frame_fallback: {self.use_single_frame_fallback}")
+        log.info(f"  - min_single_frame_confidence: {self.min_single_frame_confidence}")
         log.info(f"  - device: {self.device}")
         log.info(f"  - batch_size: {self.batch_size}")
         log.info(f"  - EXPECTED: Will process {self.sequence_length}-frame sequences for temporal aggregation")

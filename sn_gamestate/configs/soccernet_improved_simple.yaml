@@ -1,15 +1,15 @@
-# Optimized SoccerNet configuration for improved detection performance
+# Simple working SoccerNet configuration for improved detection performance
 # Focus: Boost detection recall from 14.105% to 25-30%
 # NOTE: Only using currently supported parameters
 
 # Inherit from base configuration
 defaults:
   - soccernet
-  - modules/jersey_number_detect/improved_mmocr_optimized
+  - modules/jersey_number_detect/improved_mmocr_simple
   - _self_
 
 # Experiment configuration
-experiment_name: "sn-gamestate-improved-jersey-optimized-v3"
+experiment_name: "sn-gamestate-improved-jersey-simple-v3"
 use_wandb: false
 use_rich: true
 
@@ -17,7 +17,6 @@ use_rich: true
 dataset:
   vids_dict:
     valid: []  # Auto-select first available video
-    # To find valid video IDs, run with empty list first, then check the output directory for the processed video name
 
 # Core pipeline modules
 pipeline:
@@ -48,28 +47,3 @@ track:
 
 jersey_number_detect:
   batch_size: 8  # Optimized for jersey detection
-
-# Detection optimization flags
-optimize_detection: true
-optimize_tracking: true
-optimize_jersey: true
-
-# Advanced detection parameters
-detection:
-  enable_multi_scale: true
-  enable_tta: false  # Test Time Augmentation (can be slow)
-  min_detection_size: 20  # Minimum bounding box size
-  max_detection_size: 800  # Maximum bounding box size
-
-# Tracking optimization
-tracking:
-  enable_velocity_prediction: true
-  enable_appearance_matching: true
-  min_track_length: 3  # Minimum frames for valid track
-
-# Performance monitoring
-monitoring:
-  log_detection_stats: true
-  log_tracking_stats: true
-  log_jersey_stats: true
-  save_intermediate_results: true

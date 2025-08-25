@@ -1,5 +1,6 @@
 # Fast optimized SoccerNet configuration
 # Balance: Speed + Detection Quality Improvement
+# NOTE: Only using currently supported parameters
 
 # Inherit from base configuration
 defaults:
@@ -64,14 +65,6 @@ tracking:
   enable_velocity_prediction: false  # Disable for speed
   enable_appearance_matching: true
   min_track_length: 3
-
-# Jersey optimization
-jersey_optimization:
-  enable_confidence_smoothing: true
-  enable_temporal_consistency: true
-  enable_quality_bonuses: true
-  min_sequence_quality: 0.3
-  min_temporal_score: 0.3
 
 # Performance monitoring
 monitoring:

@@ -1,6 +1,5 @@
-# Optimized configuration for improved jersey recognition
-# Focus: Better detection recall and precision
-# NOTE: Only using currently supported parameters
+# Simple configuration for improved jersey recognition
+# Focus: Basic optimization with currently supported parameters
 
 # Core parameters
 batch_size: 8  # Reduced for better quality

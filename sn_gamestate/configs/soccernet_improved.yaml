@@ -71,7 +71,8 @@ dataset:
   eval_set: "valid"  # Tracking is performed on the SoccerNet validation set. Choose from {"train", "valid", "test", "challenge"}.
   dataset_path: ${data_dir}/SoccerNetGS  # The SoccerNet game state dataset is located under the data path (defined above) in the 'SoccerNetGS' folder
   vids_dict: # Use one key per split (valid, test, etc)
-    valid: ['SNGS-04']  # Specify a single video for testing - change this to any video ID you want
+    valid: []  # Empty list = process first available video automatically. Specify explicitly which video to apply tracking on, e.g. ['SNGS-04', 'SNGS-51'] if you know valid IDs.
+    # To find valid video IDs, run with empty list first, then check the output directory for the processed video name
 
 # Tracker state (save computation time by dumping tracking results on disk for later re-use)
 # Dump tracking results to a .pcklz file to save computation time on the next run. Have a look at TrackLab tutorials for more details.

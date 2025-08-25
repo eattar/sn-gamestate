@@ -1,0 +1,52 @@
+defaults:
+  - soccernet
+  - _self_
+
+# 🚀 DIRECT OVERRIDE CONFIGURATION: Force detection parameters
+# Goal: Ensure aggressive detection parameters are actually applied
+
+# Machine configuration
+use_wandb: True
+use_rich: True
+
+# Dataset configuration for focused processing
+dataset:
+  nvid: 1  # Process only 1 video for focused optimization
+  eval_set: "valid"  # Use validation set
+  vids_dict:
+    valid: []  # Let it auto-select the best video
+
+# DIRECT MODULE OVERRIDE: Force all parameters
+modules:
+  # 🎯 KEY INNOVATION: Use improved jersey recognition for better accuracy
+  jersey_number_detect:
+    _target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
+    batch_size: 16
+    sequence_length: 7
+    min_confidence_threshold: 0.05  # EXTREMELY LOW for maximum recall
+    min_sequence_confidence: 0.15   # Lower sequence confidence
+    temporal_weight: 0.8
+    spatial_weight: 0.2
+    use_confidence_boost: true
+    enable_aggressive_boosting: true
+  
+  # 🔧 FORCE detection parameters with direct override
+  bbox_detector:
+    _target_: tracklab.pipeline.detectionlevel_module.DetectionLevelModule
+    batch_size: 4
+    conf_threshold: 0.05  # EXTREMELY LOW confidence threshold
+    iou_threshold: 0.35   # Very low IoU threshold for maximum detections
+    device: "cuda"  # Force device specification
+  
+  # 🎯 Force tracking parameters
+  track:
+    _target_: tracklab.pipeline.detectionlevel_module.DetectionLevelModule
+    batch_size: 32
+
+# Visualization for analysis
+visualization:
+  cfg:
+    save_videos: True  # Save videos for analysis
+
+# Experiment naming
+experiment_name: "sn-gamestate-direct-override"

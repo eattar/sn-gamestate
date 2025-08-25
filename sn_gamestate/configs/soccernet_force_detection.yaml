@@ -1,0 +1,49 @@
+defaults:
+  - soccernet
+  - _self_
+
+# 🚀 FORCE DETECTION CONFIGURATION: Override YOLO parameters
+# Goal: Ensure aggressive detection parameters are actually applied
+
+# Machine configuration
+use_wandb: True
+use_rich: True
+
+# Dataset configuration for focused processing
+dataset:
+  nvid: 1  # Process only 1 video for focused optimization
+  eval_set: "valid"  # Use validation set
+  vids_dict:
+    valid: []  # Let it auto-select the best video
+
+# FORCE DETECTION PARAMETERS: Override YOLO configuration
+modules:
+  # 🎯 KEY INNOVATION: Use improved jersey recognition for better accuracy
+  jersey_number_detect:
+    _target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
+    batch_size: 16
+    sequence_length: 7
+    min_confidence_threshold: 0.05  # EXTREMELY LOW for maximum recall
+    min_sequence_confidence: 0.15   # Lower sequence confidence
+    temporal_weight: 0.8
+    spatial_weight: 0.2
+    use_confidence_boost: true
+    enable_aggressive_boosting: true
+  
+  # 🔧 FORCE YOLO detection parameters
+  bbox_detector:
+    batch_size: 4  # Smaller batch for better memory usage
+    conf_threshold: 0.05  # EXTREMELY LOW confidence threshold
+    iou_threshold: 0.35   # Very low IoU threshold for maximum detections
+  
+  # 🎯 Optimize tracking parameters
+  track:
+    batch_size: 32  # Balanced batch size for tracking
+
+# Visualization for analysis
+visualization:
+  cfg:
+    save_videos: True  # Save videos for analysis
+
+# Experiment naming
+experiment_name: "sn-gamestate-force-detection"

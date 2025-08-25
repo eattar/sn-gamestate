@@ -55,6 +55,7 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - enable_aggressive_boosting: {self.enable_aggressive_boosting}")
         log.info(f"  - device: {self.device}")
         log.info(f"  - batch_size: {self.batch_size}")
+        log.info(f"  - EXPECTED: Will process {self.sequence_length}-frame sequences for temporal aggregation")
         
         # Initialize MMOCR models - EXACTLY like working baseline
         log.info("Loading MMOCRInferencer...")
@@ -381,6 +382,39 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         
         return sequence_quality
 
+    def _process_remaining_sequences(self, detections: pd.DataFrame, jersey_number_detection: List, jersey_number_confidence: List) -> Tuple[List, List]:
+        """Process any remaining sequences that didn't reach the full configured length"""
+        if not self.tracklet_sequences:
+            return jersey_number_detection, jersey_number_confidence
+        
+        # Find detections that have track_ids but haven't been processed with full sequences
+        for track_id, sequence in self.tracklet_sequences.items():
+            if len(sequence) >= 2:  # Only process if we have at least 2 frames
+                # Get the detection indices for this tracklet
+                tracklet_detections = detections[detections['track_id'] == track_id]
+                
+                if len(tracklet_detections) > 0:
+                    # Extract sequence data
+                    jersey_numbers = [item['jersey_number'] for item in sequence]
+                    confidences = [item['confidence'] for item in sequence]
+                    frame_indices = [item['frame_index'] for item in sequence]
+                    
+                    # Aggregate over available sequence (even if shorter than configured length)
+                    final_jn, final_conf = self.aggregate_tracklet_sequence(
+                        track_id, jersey_numbers, confidences, frame_indices
+                    )
+                    
+                    # Update the results for this tracklet
+                    for idx in tracklet_detections.index:
+                        det_idx = detections.index.get_loc(idx)
+                        if det_idx < len(jersey_number_detection):
+                            jersey_number_detection[det_idx] = final_jn
+                            jersey_number_confidence[det_idx] = final_conf
+                    
+                    log.info(f"Processed remaining sequence for tracklet {track_id}: {len(sequence)} frames, final: {final_jn} (conf: {final_conf:.3f})")
+        
+        return jersey_number_detection, jersey_number_confidence
+
     @torch.no_grad()
     def process(self, batch, detections: pd.DataFrame, metadatas: pd.DataFrame):
         """Process batch with improved temporal aggregation and fallback strategies"""
@@ -409,9 +443,11 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                     'frame_index': i
                 })
                 
-                # Process sequence when we have enough frames
-                if len(self.tracklet_sequences[track_id]) >= self.sequence_length:
-                    # Extract sequence data
+                # Process sequence when we have enough frames OR at the end of processing
+                current_sequence_length = len(self.tracklet_sequences[track_id])
+                
+                if current_sequence_length >= self.sequence_length:
+                    # Extract sequence data - use the most recent frames up to sequence_length
                     sequence_data = self.tracklet_sequences[track_id][-self.sequence_length:]
                     jersey_numbers = [item['jersey_number'] for item in sequence_data]
                     confidences = [item['confidence'] for item in sequence_data]
@@ -435,9 +471,13 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
                     if len(self.tracklet_sequences[track_id]) > self.sequence_length:
                         self.tracklet_sequences[track_id].pop(0)
                 else:
-                    # Use frame-level prediction for short sequences
+                    # For shorter sequences, use frame-level prediction but store for future aggregation
                     jersey_number_detection.append(jn)
                     jersey_number_confidence.append(conf)
+                    
+                    # Log sequence building progress
+                    if current_sequence_length % 2 == 0:  # Log every 2 frames
+                        log.debug(f"Tracklet {track_id}: Building sequence {current_sequence_length}/{self.sequence_length}")
             else:
                 # No track_id, use frame-level prediction
                 jersey_number_detection.append(jn)
@@ -445,6 +485,11 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         
         # Post-process results: apply confidence smoothing
         jersey_number_confidence = self._apply_confidence_smoothing(jersey_number_confidence)
+        
+        # Process any remaining sequences that didn't reach full length
+        jersey_number_detection, jersey_number_confidence = self._process_remaining_sequences(
+            detections, jersey_number_detection, jersey_number_confidence
+        )
         
         # Set outputs
         detections['jersey_number_detection'] = jersey_number_detection

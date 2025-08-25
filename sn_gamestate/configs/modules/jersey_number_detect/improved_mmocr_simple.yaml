@@ -1,6 +1,8 @@
 # Simple configuration for improved jersey recognition
 # Focus: Basic optimization with currently supported parameters
 
+_target_: sn_gamestate.jersey.improved_jersey_recognition.ImprovedJerseyRecognition
+
 # Core parameters
 batch_size: 8  # Reduced for better quality
 sequence_length: 5  # Balanced between quality and coverage

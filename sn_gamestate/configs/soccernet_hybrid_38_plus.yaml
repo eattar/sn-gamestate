@@ -30,10 +30,6 @@ modules:
     conf_threshold: 0.15  # Even lower confidence threshold for maximum recall
     iou_threshold: 0.45  # Balanced IoU threshold
   
-  # 🚀 Optimize ReID for better association
-  reid:
-    batch_size: 32  # Balanced batch size for ReID
-  
   # 🎯 Optimize tracking parameters
   track:
     batch_size: 32  # Balanced batch size for tracking

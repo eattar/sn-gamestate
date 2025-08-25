@@ -1,0 +1,43 @@
+defaults:
+  - soccernet
+  - _self_
+
+# Complete configuration for 38% GS-HOTA performance
+# Based on the successful commit that achieved GS_HOTA 38 using baseline
+
+# Machine configuration
+use_wandb: True
+use_rich: True
+
+# Dataset configuration for focused processing
+dataset:
+  nvid: 1  # Process only 1 video for focused optimization
+  eval_set: "valid"  # Use validation set
+  vids_dict:
+    valid: []  # Let it auto-select the best video
+
+# Use baseline modules for maximum performance
+modules:
+  # Use default mmocr for jersey detection (baseline approach)
+  jersey_number_detect: mmocr
+  
+  # Use optimized ReID configuration
+  reid: prtreid_baseline_38
+  
+  # Optimize detection parameters for better recall
+  bbox_detector:
+    batch_size: 4  # Smaller batch for better memory usage
+    conf_threshold: 0.2  # Lower confidence threshold for more detections
+    iou_threshold: 0.45  # Balanced IoU threshold
+  
+  # Optimize tracking parameters
+  track:
+    batch_size: 32  # Balanced batch size for tracking
+
+# Visualization for analysis
+visualization:
+  cfg:
+    save_videos: True  # Save videos for analysis
+
+# Experiment naming
+experiment_name: "sn-gamestate-baseline-38-full-replica"

@@ -38,7 +38,7 @@ pipeline:
 
 
 # Experiment name
-experiment_name: "sn-gamestate-improved-jersey-single-video"
+experiment_name: "sn-gamestate-improved-jersey-optimized-v2"
 
 # Path definitions
 home_dir: "${oc.env:HOME}"
@@ -50,14 +50,19 @@ num_cores: 1
 use_wandb: True
 use_rich: True
 
+# Optimization flags
+optimize_detection: True
+optimize_tracking: True
+optimize_jersey: True
+
 modules: # Allows module-specific batch_size and other configuration
-  bbox_detector: {batch_size: 4}  # Reduced for single video processing
-  pose_bottomup: {batch_size: 4}  # Reduced for single video processing
-  reid: {batch_size: 32}  # Reduced for single video processing
-  track: {batch_size: 32}  # Reduced for single video processing
+  bbox_detector: {batch_size: 6}  # Increased from 4 for better detection coverage
+  pose_bottomup: {batch_size: 6}  # Increased from 4 for better detection coverage
+  reid: {batch_size: 48}  # Increased from 32 for better re-identification
+  track: {batch_size: 48}  # Increased from 32 for better tracking
   pitch: {batch_size: 1}
   calibration: {batch_size: 1}
-  jersey_number_detect: {batch_size: 4}  # Reduced for single video processing
+  jersey_number_detect: {batch_size: 8}  # Increased from 4 for better jersey recognition coverage
 
 # Flags
 test_tracking: True

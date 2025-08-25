@@ -38,7 +38,7 @@ pipeline:
 
 
 # Experiment name
-experiment_name: "sn-gamestate-improved-jersey-fast"
+experiment_name: "sn-gamestate-improved-jersey-fast-optimized-v2"
 
 # Path definitions
 home_dir: "${oc.env:HOME}"
@@ -50,14 +50,19 @@ num_cores: 1
 use_wandb: True
 use_rich: True
 
+# Optimization flags
+optimize_detection: True
+optimize_tracking: True
+optimize_jersey: True
+
 modules: # Allows module-specific batch_size and other configuration
-  bbox_detector: {batch_size: 8}
-  pose_bottomup: {batch_size: 8}
-  reid: {batch_size: 64}
-  track: {batch_size: 64}
+  bbox_detector: {batch_size: 10}  # Increased for better detection coverage
+  pose_bottomup: {batch_size: 10}  # Increased for better detection coverage
+  reid: {batch_size: 64}  # Increased for better re-identification
+  track: {batch_size: 64}  # Increased for better tracking
   pitch: {batch_size: 1}
   calibration: {batch_size: 1}
-  jersey_number_detect: {batch_size: 16}  # Increased for speed
+  jersey_number_detect: {batch_size: 20}  # Increased for better jersey recognition coverage
 
 # Flags
 test_tracking: True

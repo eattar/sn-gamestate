@@ -5,8 +5,11 @@
 # Inherit from base configuration
 defaults:
   - soccernet
-  - modules/jersey_number_detect/improved_mmocr_simple
   - _self_
+
+# Override the jersey number detection module
+modules:
+  jersey_number_detect: improved_mmocr_simple
 
 # Experiment configuration
 experiment_name: "sn-gamestate-improved-jersey-simple-v3"
@@ -31,19 +34,13 @@ pipeline:
   - team_side
 
 # Optimized batch sizes for better quality
+bbox_detector: {batch_size: 4}  # Reduced from 6 for better detection quality
+pose_bottomup: {batch_size: 4}  # Reduced from 6 for better quality
+reid: {batch_size: 32}  # Reduced from 48 for better quality
+track: {batch_size: 32}  # Reduced from 48 for better quality
+jersey_number_detect: {batch_size: 8}  # Optimized for jersey detection
+
+# Detection optimization parameters
 bbox_detector:
-  batch_size: 4  # Reduced from 6 for better detection quality
   conf_threshold: 0.25  # Lower confidence threshold for more detections
   iou_threshold: 0.45   # Optimized IoU threshold
-
-pose_bottomup:
-  batch_size: 4  # Reduced from 6 for better quality
-
-reid:
-  batch_size: 32  # Reduced from 48 for better quality
-
-track:
-  batch_size: 32  # Reduced from 48 for better quality
-
-jersey_number_detect:
-  batch_size: 8  # Optimized for jersey detection

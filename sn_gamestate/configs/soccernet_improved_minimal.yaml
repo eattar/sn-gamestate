@@ -1,0 +1,22 @@
+# Minimal SoccerNet configuration for improved detection performance
+# Focus: Simple overrides to avoid configuration conflicts
+
+# Inherit from base configuration
+defaults:
+  - soccernet
+  - _self_
+
+# Override the jersey number detection module
+modules:
+  jersey_number_detect: improved_mmocr_simple
+
+# Experiment configuration
+experiment_name: "sn-gamestate-improved-jersey-minimal-v3"
+use_wandb: false
+
+# Optimized batch sizes for better quality
+bbox_detector: {batch_size: 4}  # Reduced for better detection quality
+pose_bottomup: {batch_size: 4}  # Reduced for better quality
+reid: {batch_size: 32}  # Reduced for better quality
+track: {batch_size: 32}  # Reduced for better quality
+jersey_number_detect: {batch_size: 8}  # Optimized for jersey detection

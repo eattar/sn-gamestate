@@ -186,8 +186,8 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         best_jn = max(jn_groups.keys(), key=lambda x: len(jn_groups[x]))
         best_detections = jn_groups[best_jn]
         
-        # Calculate temporal consistency score (frequency-based)
-        temporal_score = len(best_detections) / len(jersey_numbers)
+        # Calculate improved temporal consistency score
+        temporal_score = self._calculate_temporal_score(jersey_numbers, confidences, frame_indices)
         
         # Calculate confidence metrics
         avg_confidence = np.mean([conf for conf, _ in best_detections])
@@ -199,18 +199,30 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         if self.use_confidence_boost:
             # Strategy 1: Consistency-based boosting
             if temporal_score >= 0.5:  # 50% consistency threshold
-                consistency_boost = min(0.3, temporal_score - 0.3)  # Max 0.3 boost
+                consistency_boost = min(0.4, temporal_score * 0.6)  # Increased max boost to 0.4
                 boosted_confidence = min(1.0, avg_confidence + consistency_boost)
             
             # Strategy 2: High-confidence single detection boosting
             if max_confidence >= 0.8 and temporal_score >= 0.25:
-                high_confidence_boost = min(0.2, max_confidence - 0.7)  # Boost for high confidence
+                high_confidence_boost = min(0.3, max_confidence - 0.7)  # Increased max boost to 0.3
                 boosted_confidence = min(1.0, boosted_confidence + high_confidence_boost)
             
             # Strategy 3: Aggressive boosting for very high individual confidences
             if self.enable_aggressive_boosting and max_confidence >= 0.9:
-                aggressive_boost = min(0.4, max_confidence - 0.8)  # Aggressive boost
+                aggressive_boost = min(0.5, max_confidence - 0.8)  # Increased max boost to 0.5
                 boosted_confidence = min(1.0, boosted_confidence + aggressive_boost)
+            
+            # Strategy 4: Sequence length bonus (longer sequences get more boost)
+            if len(valid_detections) >= 3:
+                length_bonus = min(0.2, (len(valid_detections) - 2) * 0.1)  # Up to 0.2 bonus for 4+ frames
+                boosted_confidence = min(1.0, boosted_confidence + length_bonus)
+            
+            # Strategy 5: Confidence stability bonus
+            if len(valid_confidences) >= 2:
+                confidence_std = np.std(valid_confidences)
+                if confidence_std < 0.1:  # Very stable confidence
+                    stability_bonus = min(0.15, (0.1 - confidence_std) * 1.5)
+                    boosted_confidence = min(1.0, boosted_confidence + stability_bonus)
         
         # Calculate sequence quality score
         sequence_quality = self._calculate_sequence_quality(jersey_numbers, confidences, frame_indices)
@@ -253,8 +265,66 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         log.info(f"  - Consistency bonus: {consistency_bonus:.3f}")
         log.info(f"  - Final confidence: {final_confidence:.3f}")
         
+        # Additional debug info for sequence quality
+        if sequence_quality == 0.0:
+            log.warning(f"Sequence quality is 0.0 for tracklet {track_id}")
+            log.warning(f"  - Valid confidences: {valid_confidences}")
+            log.warning(f"  - Frame spacings: {frame_spacings if 'frame_spacings' in locals() else 'N/A'}")
+            log.warning(f"  - Jersey numbers: {jersey_numbers}")
+        
         return best_jn, final_confidence
     
+    def _calculate_temporal_score(self, jersey_numbers: List, confidences: List, frame_indices: List) -> float:
+        """Calculate improved temporal score considering sequence length and consistency"""
+        if not jersey_numbers or all(jn is None for jn in jersey_numbers):
+            return 0.0
+        
+        valid_detections = [(jn, conf, idx) for jn, conf, idx in zip(jersey_numbers, confidences, frame_indices) 
+                           if jn is not None and conf >= self.min_confidence_threshold]
+        
+        if not valid_detections:
+            return 0.0
+        
+        # Group by jersey number
+        jn_groups = defaultdict(list)
+        for jn, conf, idx in valid_detections:
+            jn_groups[jn].append((conf, idx))
+        
+        # Find the most frequent jersey number
+        if not jn_groups:
+            return 0.0
+        
+        best_jn = max(jn_groups.keys(), key=lambda x: len(jn_groups[x]))
+        best_detections = jn_groups[best_jn]
+        
+        # Basic frequency-based score
+        frequency_score = len(best_detections) / len(jersey_numbers)
+        
+        # Enhanced temporal score considering frame spacing
+        if len(best_detections) >= 2:
+            # Calculate frame spacing consistency for best detections
+            best_indices = sorted([idx for _, idx in best_detections])
+            frame_spacings = [best_indices[i+1] - best_indices[i] for i in range(len(best_indices)-1)]
+            
+            if frame_spacings:
+                # Prefer consistent spacing (lower variance = higher score)
+                spacing_variance = np.var(frame_spacings)
+                avg_spacing = np.mean(frame_spacings)
+                if avg_spacing > 0:
+                    normalized_variance = spacing_variance / (avg_spacing ** 2)
+                    spacing_score = max(0, 1.0 - normalized_variance)
+                else:
+                    spacing_score = 1.0
+            else:
+                spacing_score = 1.0
+            
+            # Combine frequency and spacing scores
+            temporal_score = (frequency_score * 0.7 + spacing_score * 0.3)
+        else:
+            temporal_score = frequency_score
+        
+        return temporal_score
+
     def _calculate_sequence_quality(self, jersey_numbers: List, confidences: List, frame_indices: List) -> float:
         """Calculate sequence quality based on consistency and confidence patterns"""
         if len(jersey_numbers) < 2:
@@ -271,13 +341,38 @@ class ImprovedJerseyRecognition(DetectionLevelModule):
         # Calculate frame spacing consistency
         frame_spacings = [frame_indices[i+1] - frame_indices[i] for i in range(len(frame_indices)-1)]
         if frame_spacings:
-            spacing_variance = np.var(frame_spacings)
-            spacing_consistency = max(0, 1.0 - spacing_variance / 10.0)  # Normalize
+            # Normalize frame spacing variance (smaller spacing = better quality)
+            avg_spacing = np.mean(frame_spacings)
+            if avg_spacing > 0:
+                spacing_variance = np.var(frame_spacings) / (avg_spacing ** 2)  # Normalized variance
+                spacing_consistency = max(0, 1.0 - spacing_variance)
+            else:
+                spacing_consistency = 1.0
         else:
             spacing_consistency = 1.0
         
-        # Overall sequence quality
-        sequence_quality = (confidence_stability * 0.7 + spacing_consistency * 0.3)
+        # Calculate jersey number consistency
+        valid_jerseys = [jn for jn in jersey_numbers if jn is not None]
+        if len(valid_jerseys) >= 2:
+            unique_jerseys = len(set(valid_jerseys))
+            jersey_consistency = 1.0 / unique_jerseys  # Higher for more consistent numbers
+        else:
+            jersey_consistency = 0.0
+        
+        # Overall sequence quality with better weighting
+        sequence_quality = (
+            confidence_stability * 0.4 + 
+            spacing_consistency * 0.3 + 
+            jersey_consistency * 0.3
+        )
+        
+        # Debug logging
+        log.debug(f"Sequence quality calculation:")
+        log.debug(f"  - Confidence stability: {confidence_stability:.3f}")
+        log.debug(f"  - Spacing consistency: {spacing_consistency:.3f}")
+        log.debug(f"  - Jersey consistency: {jersey_consistency:.3f}")
+        log.debug(f"  - Final quality: {sequence_quality:.3f}")
+        
         return sequence_quality
 
     @torch.no_grad()

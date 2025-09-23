@@ -1,0 +1,11 @@
+_target_: sn_gamestate.jersey.optimized_scale_mmocr.OptimizedScaleMMOCR
+batch_size: 16
+multi_scale_enabled: true
+scales: [0.75, 0.85, 1.0, 1.15, 1.25]
+scale_weights: [0.15, 0.25, 0.3, 0.2, 0.1]
+confidence_threshold: 0.15
+scale_thresholds: [0.10, 0.12, 0.15, 0.12, 0.10]
+min_text_width: 5
+min_text_height: 5
+adaptive_scale_selection: true
+scale_effectiveness_weights: true

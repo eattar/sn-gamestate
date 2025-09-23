@@ -103,6 +103,11 @@ class MMOCR(DetectionLevelModule):
         detections['jersey_number_detection'] = jersey_number_detection
         detections['jersey_number_confidence'] = jersey_number_confidence
 
+        # MOTA FIX: Ensure jersey numbers are properly formatted for evaluation
+        # Convert None values to empty strings
+        detections["jersey_number_detection"] = detections["jersey_number_detection"].where(detections["jersey_number_detection"] != "", None)
+        detections['jersey_number_confidence'] = detections['jersey_number_confidence'].fillna(0.0).astype(float)
+
         return detections
 
     def run_mmocr_inference(self, images_np):

@@ -1,0 +1,24 @@
+# Ball Action Spotting Module Configuration
+# This configuration defines the parameters for ball action detection
+
+# Path to ball-action-spotting repository (absolute path)
+ball_action_repo_path: "/Users/eattar/repos/ball-action-spotting"
+
+# Model experiment name (pretrained model to use)
+# Options: "sampling_weights_001", "ball_tuning_001", etc.
+experiment: "ball_tuning_001"
+
+# GPU device ID
+gpu_id: 0
+
+# Cross-validation fold (set to null for all folds)
+fold: null
+
+# Challenge mode (set to true for challenge dataset)
+challenge: false
+
+# Output directory for predictions (relative to workspace)
+output_dir: "output/ball_action"
+
+# Enable/disable ball action module
+enabled: true

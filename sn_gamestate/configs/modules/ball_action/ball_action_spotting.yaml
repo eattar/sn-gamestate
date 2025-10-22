@@ -1,0 +1,19 @@
+# Ball Action Spotting Module Configuration
+
+# Ball action spotting detection
+name: ball_action_spotting
+module_name: sn_gamestate.ball_action.tracklab_module.BallActionSpottingModule
+
+# Path to ball-action-spotting repository
+ball_action_repo_path: "/workspace/ball-action-spotting"
+
+# Model configuration
+experiment_name: "sampling_weights_001"
+fold: 0
+
+# Use cached predictions if available (set to False to force re-prediction)
+use_cached: true
+
+# Device configuration (inherited from main config)
+batch_size: 1
+device: ${device}

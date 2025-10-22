@@ -1,0 +1,12 @@
+# Action-Player Matching Module Configuration
+
+# Match ball actions to player jersey numbers
+name: action_player_matching
+module_name: sn_gamestate.ball_action.tracklab_module.ActionPlayerMatchingModule
+
+# Matching parameters
+max_distance: 200.0  # Maximum distance (pixels) to assign action to player
+use_ball_position: false  # Set to true if ball tracking is available
+
+# Device configuration
+device: ${device}

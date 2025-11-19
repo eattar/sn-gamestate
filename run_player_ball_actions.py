@@ -52,22 +52,28 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage
-  python run_player_ball_actions.py --video match.mp4 --team left --jersey 10
+  # Basic usage - SoccerNetGS game
+  python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10
+  
+  # Specify dataset split
+  python run_player_ball_actions.py --game SNGS-001 --split valid --team right --jersey 7
   
   # Specify output file
-  python run_player_ball_actions.py --video match.mp4 --team right --jersey 7 --output player7_actions.json
+  python run_player_ball_actions.py --game SNGS-001 --team right --jersey 7 --output player7_actions.json
   
   # Use cached tracking state
-  python run_player_ball_actions.py --video match.mp4 --team left --jersey 10 --state-cache tracking_state.pklz
+  python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10 --state-cache tracking_state.pklz
   
   # Use specific ball-action model
-  python run_player_ball_actions.py --video match.mp4 --team left --jersey 10 --experiment ball_finetune_long_004 --fold 5
+  python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10 --experiment ball_finetune_long_004 --fold 5
         """
     )
     
-    parser.add_argument('--video', required=True, type=str,
-                        help='Path to input video file')
+    parser.add_argument('--game', required=True, type=str,
+                        help='Game name (e.g., SNGS-001) or path to video file')
+    parser.add_argument('--split', type=str, default='valid',
+                        choices=['train', 'valid', 'test', 'challenge'],
+                        help='Dataset split (default: valid)')
     parser.add_argument('--team', required=True, choices=['left', 'right'],
                         help='Player team (left or right)')
     parser.add_argument('--jersey', required=True, type=int,
@@ -88,12 +94,13 @@ Examples:
     return parser.parse_args()
 
 
-def run_sn_gamestate_tracking(video_path: str) -> Tuple[pd.DataFrame, str]:
+def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.DataFrame, str]:
     """
-    Run SN-GameState tracking pipeline on video
+    Run SN-GameState tracking pipeline on game
     
     Args:
-        video_path: Path to video file
+        game_name: Game name (e.g., 'SNGS-001')
+        split: Dataset split ('train', 'valid', 'test', 'challenge')
         
     Returns:
         Tuple of (detections_dataframe, state_file_path)
@@ -109,7 +116,7 @@ def run_sn_gamestate_tracking(video_path: str) -> Tuple[pd.DataFrame, str]:
     config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
     
     with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-        # Load config and modify for single video
+        # Load config and modify for single game
         cfg = compose(config_name="soccernet")
         
         # Disable visualization to save time
@@ -127,10 +134,14 @@ def run_sn_gamestate_tracking(video_path: str) -> Tuple[pd.DataFrame, str]:
             'team_side'
         ]
         
-        # TODO: Configure for external video input
-        # For now, user needs to place video in SoccerNetGS dataset structure
-        print(f"\n⚠️  Note: Currently requires video in SoccerNetGS dataset format")
-        print(f"   Please ensure video is at: {cfg.dataset.dataset_path}/[game_name]/")
+        # Configure for specific game
+        cfg.dataset.eval_set = split
+        cfg.dataset.nvid = 1  # Process one video
+        cfg.dataset.vids_dict = {split: [game_name]}
+        
+        print(f"\n📂 Dataset: {cfg.dataset.dataset_path}")
+        print(f"   Split: {split}")
+        print(f"   Game: {game_name}")
         
         # Run tracking
         print("\n▶ Running tracking pipeline...")
@@ -419,25 +430,41 @@ def main():
     print("\n" + "="*70)
     print(" Ball Action Spotting - Player Actions Extraction")
     print("="*70)
-    print(f"  Video: {args.video}")
+    print(f"  Game/Video: {args.game}")
+    print(f"  Split: {args.split}")
     print(f"  Target Player: Team={args.team}, Jersey=#{args.jersey}")
     print(f"  Ball-Action Model: {args.experiment}/fold_{args.fold}")
     print("="*70)
     
-    # Validate video exists
-    video_path = Path(args.video)
-    if not video_path.exists():
-        print(f"\n❌ ERROR: Video file not found: {video_path}")
+    # Determine if it's a game name or video path
+    game_path = Path(args.game)
+    if game_path.exists() and game_path.suffix in ['.mp4', '.avi', '.mov']:
+        # It's a video file
+        video_path = game_path
+        game_name = None
+    else:
+        # It's a game name - construct path from config
+        game_name = args.game
+        video_path = None
+    
+    print("\n⚠️  Note: SoccerNetGS uses image frames, not video files.")
+    print(f"   Current implementation requires video file for ball-action detection.")
+    print(f"   Please provide a video file path or convert frames to video first.\n")
+    
+    if video_path is None:
+        print(f"❌ ERROR: Game '{game_name}' requires image-to-video conversion.")
+        print(f"\nTo convert SoccerNetGS frames to video, run:")
+        print(f"  ffmpeg -framerate 25 -pattern_type glob -i '/path/to/{game_name}/*.jpg' -c:v libx264 {game_name}.mp4")
         sys.exit(1)
     
-    # Step 1: Get tracking detections
+    # Step 1: Get tracking detections  
     if args.state_cache and Path(args.state_cache).exists():
         detections = load_tracking_state(args.state_cache)
     elif args.skip_tracking:
         print("\n❌ ERROR: --skip-tracking requires --state-cache with valid file")
         sys.exit(1)
     else:
-        detections, state_file = run_sn_gamestate_tracking(str(video_path))
+        detections, state_file = run_sn_gamestate_tracking(game_name, args.split)
     
     # Step 2: Filter player by jersey
     player_dets = filter_player_by_jersey(detections, args.team, args.jersey)
@@ -453,7 +480,7 @@ def main():
     print("STEP 5: Creating Output")
     print("="*60)
     
-    output = create_output_json(matched_actions, args.team, args.jersey, str(video_path))
+    output = create_output_json(matched_actions, args.team, args.jersey, game_name or str(video_path))
     
     # Determine output filename
     if args.output:

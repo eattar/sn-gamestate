@@ -6,13 +6,21 @@ Ball Action Spotting Integration with SN-GameState
 This script integrates ball-action-spotting with sn-gamestate player tracking
 to output ball actions performed by a specific player (identified by team and jersey number).
 
+Workflow:
+    1. Run SN-GameState tracking on image frames (native SoccerNetGS format)
+    2. Convert image frames to video for ball-action-spotting
+    3. Run ball-action detection on the video
+    4. Match ball actions to specific player's detections
+    5. Output results as JSON
+
 Usage:
-    python run_player_ball_actions.py --video match.mp4 --team left --jersey 10 --output results.json
+    python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10
 
 Requirements:
     - SN-GameState installed and configured
     - Ball-action-spotting models in ../ball-action-spotting/data/ball_action/experiments/
-    - Input video file
+    - SoccerNetGS dataset with image frames
+    - ffmpeg installed (for frame-to-video conversion)
 
 Output:
     JSON file with format:
@@ -28,6 +36,8 @@ Output:
 import argparse
 import json
 import sys
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import numpy as np
@@ -94,7 +104,76 @@ Examples:
     return parser.parse_args()
 
 
-def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.DataFrame, str]:
+def convert_frames_to_video(frames_dir: Path, output_video: Path, fps: int = 25) -> bool:
+    """
+    Convert image frames to video using ffmpeg
+    
+    Args:
+        frames_dir: Directory containing image frames
+        output_video: Output video file path
+        fps: Frames per second (default: 25)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    print("\n" + "="*60)
+    print("Converting Image Frames to Video")
+    print("="*60)
+    print(f"  Input: {frames_dir}")
+    print(f"  Output: {output_video}")
+    print(f"  FPS: {fps}")
+    
+    # Check if ffmpeg is available
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("\n❌ ERROR: ffmpeg not found. Please install ffmpeg:")
+        print("  Ubuntu/Debian: sudo apt-get install ffmpeg")
+        print("  macOS: brew install ffmpeg")
+        print("  Or download from: https://ffmpeg.org/download.html")
+        return False
+    
+    # Find image files
+    image_files = sorted(frames_dir.glob('*.jpg'))
+    if not image_files:
+        image_files = sorted(frames_dir.glob('*.png'))
+    
+    if not image_files:
+        print(f"\n❌ ERROR: No image files found in {frames_dir}")
+        return False
+    
+    print(f"  Found {len(image_files)} frames")
+    
+    # Build ffmpeg command
+    # Use pattern matching for numbered frames
+    input_pattern = str(frames_dir / "%06d.jpg") if image_files[0].suffix == '.jpg' else str(frames_dir / "%06d.png")
+    
+    cmd = [
+        'ffmpeg',
+        '-framerate', str(fps),
+        '-i', input_pattern,
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-y',  # Overwrite output file
+        str(output_video)
+    ]
+    
+    print("\n▶ Running ffmpeg...")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"\n❌ ffmpeg failed: {result.stderr}")
+            return False
+        
+        print(f"✓ Video created: {output_video}")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ ERROR during video conversion: {e}")
+        return False
+
+
+def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.DataFrame, str, Path]:
     """
     Run SN-GameState tracking pipeline on game
     
@@ -103,7 +182,7 @@ def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.
         split: Dataset split ('train', 'valid', 'test', 'challenge')
         
     Returns:
-        Tuple of (detections_dataframe, state_file_path)
+        Tuple of (detections_dataframe, state_file_path, frames_directory)
     """
     print("\n" + "="*60)
     print("STEP 1: Running SN-GameState Player Tracking")
@@ -150,6 +229,9 @@ def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.
         # Get detections
         detections = tracker_state.detections_pred
         
+        # Get frames directory
+        frames_dir = Path(cfg.dataset.dataset_path) / split / game_name
+        
         # Save state for future use
         state_file = Path("tracking_state_temp.pklz")
         print(f"\n💾 Saving tracking state to: {state_file}")
@@ -157,8 +239,9 @@ def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.
             pickle.dump(tracker_state, f)
         
         print(f"✓ Tracking complete: {len(detections)} detections")
+        print(f"✓ Frames directory: {frames_dir}")
         
-        return detections, str(state_file)
+        return detections, str(state_file), frames_dir
 
 
 def load_tracking_state(state_path: str) -> pd.DataFrame:
@@ -447,24 +530,44 @@ def main():
         game_name = args.game
         video_path = None
     
-    print("\n⚠️  Note: SoccerNetGS uses image frames, not video files.")
-    print(f"   Current implementation requires video file for ball-action detection.")
-    print(f"   Please provide a video file path or convert frames to video first.\n")
-    
-    if video_path is None:
-        print(f"❌ ERROR: Game '{game_name}' requires image-to-video conversion.")
-        print(f"\nTo convert SoccerNetGS frames to video, run:")
-        print(f"  ffmpeg -framerate 25 -pattern_type glob -i '/path/to/{game_name}/*.jpg' -c:v libx264 {game_name}.mp4")
-        sys.exit(1)
-    
-    # Step 1: Get tracking detections  
+    # Step 1: Get tracking detections from image frames
     if args.state_cache and Path(args.state_cache).exists():
         detections = load_tracking_state(args.state_cache)
+        frames_dir = None  # Will need to be provided if needed
     elif args.skip_tracking:
         print("\n❌ ERROR: --skip-tracking requires --state-cache with valid file")
         sys.exit(1)
     else:
-        detections, state_file = run_sn_gamestate_tracking(game_name, args.split)
+        # Run SN-GameState on image frames (native format)
+        detections, state_file, frames_dir = run_sn_gamestate_tracking(game_name, args.split)
+    
+    # Step 1.5: Convert frames to video for ball-action-spotting
+    if video_path is None and game_name:
+        # Need to convert frames to video
+        if frames_dir is None:
+            # Try to infer frames directory from config
+            from hydra import compose, initialize_config_dir
+            config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
+            with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
+                cfg = compose(config_name="soccernet")
+                frames_dir = Path(cfg.dataset.dataset_path) / args.split / game_name
+        
+        if not frames_dir.exists():
+            print(f"\n❌ ERROR: Frames directory not found: {frames_dir}")
+            sys.exit(1)
+        
+        # Create temporary video file
+        temp_video = Path(tempfile.gettempdir()) / f"{game_name}_temp.mp4"
+        print(f"\n📹 Converting frames to video for ball-action detection...")
+        
+        if not convert_frames_to_video(frames_dir, temp_video, fps=25):
+            print(f"\n❌ ERROR: Failed to convert frames to video")
+            sys.exit(1)
+        
+        video_path = temp_video
+        cleanup_video = True
+    else:
+        cleanup_video = False
     
     # Step 2: Filter player by jersey
     player_dets = filter_player_by_jersey(detections, args.team, args.jersey)
@@ -515,6 +618,11 @@ def main():
     print("\n" + "="*60)
     print("✓ Processing Complete!")
     print("="*60)
+    
+    # Cleanup temporary video if created
+    if cleanup_video and video_path.exists():
+        print(f"\n🧹 Cleaning up temporary video: {video_path}")
+        video_path.unlink()
 
 
 if __name__ == '__main__':

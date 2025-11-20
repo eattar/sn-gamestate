@@ -187,44 +187,58 @@ def convert_frames_to_video(frames_dir: Path, output_video: Path, fps: int = 25)
         return False
 
 
-def load_tracking_state(state_path: str) -> pd.DataFrame:
-    """Load tracking state from .pklz file"""
+def load_tracking_state(state_path: str, game_name: str = None) -> pd.DataFrame:
+    """
+    Load tracking state from .pklz file
+    
+    Args:
+        state_path: Path to .pklz file (can be single game or multi-game archive)
+        game_name: Game ID (e.g., "SNGS-021") for multi-game archives
+    
+    Returns:
+        DataFrame with detections
+    """
     print(f"\n📂 Loading tracking state from: {state_path}")
     
-    # Try different decompression methods
-    # .pklz files can be gzip or zip compressed, containing pickle or JSON
     import zipfile
     
     try:
-        # First try gzip
+        # First try gzip (single-game state files)
         with gzip.open(state_path, 'rb') as f:
             tracker_state = pickle.load(f)
-    except gzip.BadGzipFile:
-        # If not gzip, try zip
-        with zipfile.ZipFile(state_path, 'r') as zf:
-            # List files to see what's inside
-            filenames = zf.namelist()
-            print(f"  Files in archive: {filenames}")
             
-            # Try to find pickle file
-            for filename in filenames:
-                if filename.endswith('.pkl') or filename.endswith('.pickle'):
-                    with zf.open(filename, 'r') as f:
-                        tracker_state = pickle.load(f)
-                    break
+        # Check if it's a TrackerState object or DataFrame
+        if hasattr(tracker_state, 'detections_pred'):
+            detections = tracker_state.detections_pred
+        else:
+            detections = tracker_state
+            
+    except gzip.BadGzipFile:
+        # Multi-game archive (zip file with individual game pickle files)
+        with zipfile.ZipFile(state_path, 'r') as zf:
+            filenames = zf.namelist()
+            
+            # Extract game number from game_name (e.g., SNGS-021 -> 021)
+            if game_name:
+                game_num = game_name.split('-')[-1]  # Get "021" from "SNGS-021"
+                pkl_filename = f"{game_num}.pkl"
+                
+                if pkl_filename not in filenames:
+                    raise ValueError(f"Game {game_name} (file {pkl_filename}) not found in archive. Available games: {[f for f in filenames if f.endswith('.pkl') and not f.endswith('_image.pkl')]}")
+                
+                print(f"  Loading game {game_name} from {pkl_filename}")
+                with zf.open(pkl_filename, 'r') as f:
+                    detections = pickle.load(f)
             else:
-                # If no pickle file, try JSON
-                filename = filenames[0]
-                print(f"  Loading JSON file: {filename}")
-                with zf.open(filename, 'r') as f:
-                    import json
-                    data = json.load(f)
-                    # Convert JSON to tracker state format
-                    # This will depend on the actual JSON structure
-                    print(f"  JSON keys: {data.keys() if isinstance(data, dict) else 'not a dict'}")
-                    raise NotImplementedError("JSON format not yet supported - need to implement conversion")
+                # No game specified, load first pickle file
+                pkl_files = [f for f in filenames if f.endswith('.pkl') and not f.endswith('_image.pkl')]
+                if not pkl_files:
+                    raise ValueError(f"No pickle files found in archive")
+                
+                print(f"  No game specified, loading first game: {pkl_files[0]}")
+                with zf.open(pkl_files[0], 'r') as f:
+                    detections = pickle.load(f)
     
-    detections = tracker_state.detections_pred
     print(f"✓ Loaded {len(detections)} detections")
     
     return detections
@@ -515,7 +529,7 @@ def main():
         print(f"\nThis will create a .pklz file in the outputs directory")
         sys.exit(1)
     
-    detections = load_tracking_state(args.state_cache)
+    detections = load_tracking_state(args.state_cache, game_name)
     
     # Get frames directory
     if args.frames_dir:

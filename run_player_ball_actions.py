@@ -486,6 +486,12 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     else:
         player_dets_work['frame_num'] = pd.to_numeric(player_dets_work['image_id'], errors='coerce')
     
+    # Assume 1920x1080 resolution for spatial filtering
+    frame_width = 1920
+    frame_height = 1080
+    center_x = frame_width / 2
+    center_y = frame_height / 2
+    
     for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']
         
@@ -499,16 +505,48 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             # Find closest detection by frame
             nearby_dets = nearby_dets.copy()
             nearby_dets['frame_diff'] = abs(nearby_dets['frame_num'] - action_frame)
-            closest_det = nearby_dets.loc[nearby_dets['frame_diff'].idxmin()]
             
-            # Only match if player is very close in time (within 10 frames = 0.4 seconds)
-            if closest_det['frame_diff'] <= 10:
+            # Add spatial scoring - actions typically happen in center of frame
+            # bbox_ltwh format: [left, top, width, height]
+            def calculate_spatial_score(bbox):
+                """Calculate how central the player is (0-1, higher = more central)"""
+                if pd.isna(bbox).any():
+                    return 0.0
+                left, top, width, height = bbox
+                # Calculate center of bbox
+                bbox_center_x = left + width / 2
+                bbox_center_y = top + height / 2
+                # Distance from frame center
+                dist_x = abs(bbox_center_x - center_x)
+                dist_y = abs(bbox_center_y - center_y)
+                # Normalize to 0-1 (closer to center = higher score)
+                # Use reasonable thresholds: 400px horizontal, 300px vertical
+                spatial_score = max(0, 1 - (dist_x / 400 + dist_y / 300) / 2)
+                return spatial_score
+            
+            nearby_dets['spatial_score'] = nearby_dets['bbox_ltwh'].apply(calculate_spatial_score)
+            
+            # Combined score: temporal (frame_diff) + spatial (centrality)
+            # Normalize frame_diff to 0-1 scale (0 frames = 1.0, 10 frames = 0.0)
+            nearby_dets['temporal_score'] = 1.0 - (nearby_dets['frame_diff'] / 10.0).clip(0, 1)
+            # Combined: 60% spatial, 40% temporal (spatial is more important for distinguishing players)
+            nearby_dets['combined_score'] = 0.6 * nearby_dets['spatial_score'] + 0.4 * nearby_dets['temporal_score']
+            
+            # Get best match by combined score
+            closest_det = nearby_dets.loc[nearby_dets['combined_score'].idxmax()]
+            
+            # Only match if:
+            # 1. Player is close in time (within 10 frames)
+            # 2. Player has decent spatial score (>0.3 = reasonably central)
+            if closest_det['frame_diff'] <= 10 and closest_det['spatial_score'] > 0.3:
                 matched_actions.append({
                     'action': action['action'],
                     'frame': action_frame,
                     'confidence': action['confidence'],
                     'player_frame': int(closest_det['frame_num']),
-                    'frame_offset': int(closest_det['frame_diff'])
+                    'frame_offset': int(closest_det['frame_diff']),
+                    'spatial_score': float(closest_det['spatial_score']),
+                    'combined_score': float(closest_det['combined_score'])
                 })
     
     # Filter by minimum time between actions (remove rapid-fire detections)

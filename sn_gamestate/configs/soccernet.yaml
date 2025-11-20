@@ -9,7 +9,7 @@ defaults:
   - dataset: soccernet_gs
   - eval: gs_hota
   - engine: offline
-  - visualization: gamestate  # Save tracking results as a .mp4 video in the run directory specified below (sn-gamestate/outputs/...)
+  # - visualization: gamestate  # Disabled - Save tracking results as a .mp4 video in the run directory specified below (sn-gamestate/outputs/...)
   - modules/bbox_detector: yolo_ultralytics
   - modules/reid: prtreid
   - modules/track: bpbreid_strong_sort
@@ -80,10 +80,10 @@ state:
   save_file: "states/${experiment_name}.pklz"  # 'null' to disable saving. This is the save path for the tracker_state object that contains all modules outputs (bboxes, reid embeddings, jersey numbers, roles, teams, etc)
   load_file: null  # 'null' to disable loading. Load a file that was saved with the 'state.save_file' option above. Don't forget to remove from the pipeline all modules that should not be run again, but loaded from the saved tracker state.
 
-# Visualization
-visualization:
-  cfg:
-    save_videos: False  # Save a .mp4 video on disk with the game state reconstruction output (see 'tracklab/tracklab/configs/visualization' for more options)
+# Visualization (disabled to avoid loading broken visualization module)
+# visualization:
+#   cfg:
+#     save_videos: False  # Save a .mp4 video on disk with the game state reconstruction output (see 'tracklab/tracklab/configs/visualization' for more options)
 
 # configure Hydra to use the current working directory
 # and set up the output directory according to experiment_name

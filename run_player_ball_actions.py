@@ -312,6 +312,8 @@ def filter_player_by_jersey(detections: pd.DataFrame, team: str, jersey: int) ->
         
         if 'team' in detections.columns and jersey_col and jersey_col in detections.columns:
             team_jersey = detections[['team', jersey_col]].dropna().drop_duplicates()
+            # Sort by team then jersey
+            team_jersey = team_jersey.sort_values(['team', jersey_col])
             for _, row in team_jersey.iterrows():
                 print(f"  - Team: {row['team']}, Jersey: {int(row[jersey_col])}")
         

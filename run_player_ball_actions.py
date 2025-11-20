@@ -537,8 +537,9 @@ def main():
     else:
         # Default path based on standard SoccerNetGS structure
         # Assumes data is at /netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS
+        # Frames are in img1 subdirectory
         data_dir = Path("/netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS")
-        frames_dir = data_dir / args.split / game_name
+        frames_dir = data_dir / args.split / game_name / "img1"
         print(f"  Frames directory (auto-detected): {frames_dir}")
     
     # Step 1.5: Convert frames to video for ball-action-spotting

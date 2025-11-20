@@ -535,26 +535,18 @@ def main():
     if args.frames_dir:
         frames_dir = Path(args.frames_dir)
     else:
-        # Try to infer from config
-        from hydra import compose, initialize_config_dir
-        config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
-        with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-            cfg = compose(config_name="soccernet")
-            frames_dir = Path(cfg.dataset.dataset_path) / args.split / game_name
+        # Default path based on standard SoccerNetGS structure
+        # Assumes data is at /netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS
+        data_dir = Path("/netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS")
+        frames_dir = data_dir / args.split / game_name
+        print(f"  Frames directory (auto-detected): {frames_dir}")
     
     # Step 1.5: Convert frames to video for ball-action-spotting
     if video_path is None and game_name:
         # Need to convert frames to video
-        if frames_dir is None:
-            # Try to infer frames directory from config
-            from hydra import compose, initialize_config_dir
-            config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
-            with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-                cfg = compose(config_name="soccernet")
-                frames_dir = Path(cfg.dataset.dataset_path) / args.split / game_name
-        
         if not frames_dir.exists():
             print(f"\n❌ ERROR: Frames directory not found: {frames_dir}")
+            print(f"   Please specify --frames-dir or ensure data is at default location")
             sys.exit(1)
         
         # Create temporary video file

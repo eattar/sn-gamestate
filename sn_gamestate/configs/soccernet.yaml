@@ -80,8 +80,9 @@ state:
   save_file: "states/${experiment_name}.pklz"  # 'null' to disable saving. This is the save path for the tracker_state object that contains all modules outputs (bboxes, reid embeddings, jersey numbers, roles, teams, etc)
   load_file: null  # 'null' to disable loading. Load a file that was saved with the 'state.save_file' option above. Don't forget to remove from the pipeline all modules that should not be run again, but loaded from the saved tracker state.
 
-# Visualization (set to null to avoid loading broken visualization module)
-visualization: null
+# Visualization (empty dict to avoid loading broken visualization module)
+# The engine iterates over callbacks, so provide empty dict instead of null
+visualization: {}
 
 # configure Hydra to use the current working directory
 # and set up the output directory according to experiment_name

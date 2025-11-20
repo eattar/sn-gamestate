@@ -512,11 +512,8 @@ def format_time(frame: int, fps: float) -> str:
 
 
 def create_output_json(matched_actions: List[Dict], team: str, jersey: int, 
-                      video_path: str) -> Dict:
+                      video_name: str, fps: float = 25.0) -> Dict:
     """Create output JSON structure"""
-    video_info = get_video_info(video_path)
-    fps = video_info['fps']
-    
     # Add timestamps
     for action in matched_actions:
         action['time'] = format_time(action['frame'], fps)
@@ -527,7 +524,8 @@ def create_output_json(matched_actions: List[Dict], team: str, jersey: int,
             'team': team,
             'jersey': jersey
         },
-        'video': str(video_path),
+        'video': video_name,
+        'fps': fps,
         'total_actions': len(matched_actions),
         'action_counts': {},
         'actions': matched_actions
@@ -625,7 +623,8 @@ def main():
     print("STEP 5: Creating Output")
     print("="*60)
     
-    output = create_output_json(matched_actions, args.team, args.jersey, game_name or str(video_path))
+    output = create_output_json(matched_actions, args.team, args.jersey, 
+                               game_name or str(video_path), fps=25.0)
     
     # Determine output filename
     if args.output:

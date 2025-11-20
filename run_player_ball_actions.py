@@ -839,7 +839,15 @@ def main():
         # Save video if requested
         if args.save_video:
             import shutil
-            save_path = Path(args.save_video).resolve()
+            # Handle directory vs file path
+            save_arg_path = Path(args.save_video)
+            if save_arg_path.suffix == '': # It's a directory
+                save_arg_path.mkdir(parents=True, exist_ok=True)
+                save_path = (save_arg_path / f"{game_name}_video.mp4").resolve()
+            else: # It's a file path
+                save_arg_path.parent.mkdir(parents=True, exist_ok=True)
+                save_path = save_arg_path.resolve()
+                
             try:
                 shutil.copy(temp_video, save_path)
                 print(f"✓ Video saved to: {save_path}")

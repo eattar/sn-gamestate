@@ -285,10 +285,20 @@ def filter_player_by_jersey(detections: pd.DataFrame, team: str, jersey: int) ->
     
     # Filter by team and jersey
     if jersey_col:
-        player_dets = detections[
-            (detections['team'] == team) & 
-            (detections[jersey_col] == jersey)
+        # Convert jersey column to int for comparison (handles float/string issues)
+        detections_filtered = detections.copy()
+        detections_filtered[jersey_col] = pd.to_numeric(detections_filtered[jersey_col], errors='coerce')
+        
+        player_dets = detections_filtered[
+            (detections_filtered['team'] == team) & 
+            (detections_filtered[jersey_col] == jersey)
         ].copy()
+        
+        # Debug: show what we're filtering
+        team_count = len(detections_filtered[detections_filtered['team'] == team])
+        jersey_count = len(detections_filtered[detections_filtered[jersey_col] == jersey])
+        print(f"Detections with team='{team}': {team_count}")
+        print(f"Detections with jersey={jersey}: {jersey_count}")
     else:
         # Fall back to team only
         player_dets = detections[detections['team'] == team].copy()

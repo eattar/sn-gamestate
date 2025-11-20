@@ -116,6 +116,8 @@ Examples:
                         help='Device for ball-action model (default: cuda:0)')
     parser.add_argument('--save-video', type=str,
                         help='Save the converted video to this path (optional)')
+    parser.add_argument('--analyze-data', action='store_true',
+                        help='Run data quality analysis on tracking state and exit')
     
     return parser.parse_args()
 
@@ -291,13 +293,24 @@ def filter_player_by_jersey(detections: pd.DataFrame, team: str, jersey: int) ->
         detections_filtered = detections.copy()
         detections_filtered[jersey_col] = pd.to_numeric(detections_filtered[jersey_col], errors='coerce')
         
-        player_dets = detections_filtered[
-            (detections_filtered['team'] == team) & 
-            (detections_filtered[jersey_col] == jersey)
-        ].copy()
+        if str(team).lower() == 'nan':
+            print(f"Filtering for team='nan'...")
+            player_dets = detections_filtered[
+                (detections_filtered['team'].astype(str) == 'nan') & 
+                (detections_filtered[jersey_col] == jersey)
+            ].copy()
+        else:
+            player_dets = detections_filtered[
+                (detections_filtered['team'] == team) & 
+                (detections_filtered[jersey_col] == jersey)
+            ].copy()
         
         # Debug: show what we're filtering
-        team_count = len(detections_filtered[detections_filtered['team'] == team])
+        if str(team).lower() == 'nan':
+            team_count = len(detections_filtered[detections_filtered['team'].astype(str) == 'nan'])
+        else:
+            team_count = len(detections_filtered[detections_filtered['team'] == team])
+            
         jersey_count = len(detections_filtered[detections_filtered[jersey_col] == jersey])
         print(f"Detections with team='{team}': {team_count}")
         print(f"Detections with jersey={jersey}: {jersey_count}")
@@ -707,6 +720,92 @@ def create_output_json(matched_actions: List[Dict], team: str, jersey: int,
     return output
 
 
+def analyze_tracking_data(detections: pd.DataFrame):
+    """
+    Analyze tracking data quality to identify issues like duplicate jerseys
+    """
+    print("\n" + "="*60)
+    print("📊 DATA QUALITY ANALYSIS")
+    print("="*60)
+    
+    print(f"Total detections: {len(detections)}")
+    print(f"Columns: {list(detections.columns)}")
+    
+    # Check teams
+    if 'team' in detections.columns:
+        print("\nTeam distribution:")
+        print(detections['team'].value_counts(dropna=False))
+    
+    # Check jerseys
+    jersey_col = None
+    for col in ['jn_tracklet', 'jersey_number', 'jersey', 'jn']:
+        if col in detections.columns:
+            jersey_col = col
+            break
+            
+    if jersey_col:
+        print(f"\nJersey column: '{jersey_col}'")
+        
+        # Convert to numeric for analysis, coercing errors
+        detections_work = detections.copy()
+        detections_work[jersey_col] = pd.to_numeric(detections_work[jersey_col], errors='coerce')
+        
+        print("Jersey distribution (top 20):")
+        print(detections_work[jersey_col].value_counts(dropna=False).head(20))
+        
+        # Check for duplicates (same frame, same jersey)
+        print("\nChecking for duplicate jerseys in same frame...")
+        if 'image_id' in detections.columns:
+            frame_col = 'image_id'
+        else:
+            # Fallback to index if it looks like frame info
+            frame_col = detections.index.name or 'index'
+            
+        # Filter out NaNs for jersey
+        valid_jerseys = detections_work[detections_work[jersey_col].notna()]
+        
+        # Group by frame and jersey
+        dupes = valid_jerseys.groupby([frame_col, jersey_col]).size()
+        dupes = dupes[dupes > 1]
+        
+        if len(dupes) > 0:
+            print(f"\n⚠️  Found {len(dupes)} instances of same jersey appearing multiple times in a single frame!")
+            print("Sample duplicates (Frame, Jersey) -> Count:")
+            print(dupes.head(10))
+            
+            # Analyze a few examples
+            print("\nDetailed analysis of first 5 duplicates:")
+            for (frame, jersey), count in dupes.head(5).items():
+                subset = detections_work[
+                    (detections_work[frame_col] == frame) & 
+                    (detections_work[jersey_col] == jersey)
+                ]
+                print(f"  Frame {frame}, Jersey {int(jersey)}:")
+                for _, row in subset.iterrows():
+                    team_val = row.get('team', 'N/A')
+                    conf = row.get('conf', 'N/A')
+                    bbox = row.get('bbox_ltwh', 'N/A')
+                    print(f"    - Team: {team_val}, Conf: {conf}, BBox: {bbox}")
+        else:
+            print("\n✓ No duplicate jerseys found in any single frame.")
+            
+        # Check for 'nan' teams with valid jerseys
+        nan_team_players = detections_work[
+            (detections_work['team'].astype(str) == 'nan') & 
+            (detections_work[jersey_col].notna())
+        ]
+        if len(nan_team_players) > 0:
+            print(f"\n⚠️  Found {len(nan_team_players)} detections with valid jersey but 'nan' team")
+            print("Sample jerseys with nan team:")
+            print(nan_team_players[jersey_col].value_counts().head(10))
+            
+    else:
+        print("No jersey column found.")
+        
+    print("\n" + "="*60)
+    sys.exit(0)
+
+
 def main():
     """Main execution"""
     args = parse_args()
@@ -744,6 +843,10 @@ def main():
         sys.exit(1)
     
     detections = load_tracking_state(args.state_cache, game_name)
+    
+    # Run analysis if requested
+    if args.analyze_data:
+        analyze_tracking_data(detections)
     
     # Get frames directory
     if args.frames_dir:

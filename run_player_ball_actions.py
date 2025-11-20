@@ -114,6 +114,8 @@ Examples:
                         help='Model fold number (default: 5, which has 90.1%% accuracy)')
     parser.add_argument('--device', type=str, default='cuda:0',
                         help='Device for ball-action model (default: cuda:0)')
+    parser.add_argument('--save-video', type=str,
+                        help='Save the converted video to this path (optional)')
     
     return parser.parse_args()
 
@@ -605,7 +607,16 @@ def main():
             sys.exit(1)
         
         video_path = temp_video
-        cleanup_video = True
+        
+        # Save video if requested
+        if args.save_video:
+            import shutil
+            save_path = Path(args.save_video)
+            shutil.copy(temp_video, save_path)
+            print(f"✓ Video saved to: {save_path}")
+            cleanup_video = False  # Don't delete if we saved a copy
+        else:
+            cleanup_video = True
     else:
         cleanup_video = False
     

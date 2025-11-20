@@ -551,43 +551,17 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             nearby_dets = nearby_dets.copy()
             nearby_dets['frame_diff'] = abs(nearby_dets['frame_num'] - action_frame)
             
-            # Add spatial scoring
-            def calculate_spatial_score(bbox):
-                if pd.isna(bbox).any(): return 0.0
-                left, top, width, height = bbox
-                bbox_center_x = left + width / 2
-                bbox_center_y = top + height / 2
-                dist_x = abs(bbox_center_x - center_x)
-                dist_y = abs(bbox_center_y - center_y)
-                # Relaxed spatial scoring: allow players further from center
-                # Denominators increased: 400->800 (x), 300->500 (y)
-                return max(0, 1 - (dist_x / 800 + dist_y / 500) / 2)
-            
-            nearby_dets['spatial_score'] = nearby_dets['bbox_ltwh'].apply(calculate_spatial_score)
-            
-            # Combined score
-            nearby_dets['combined_score'] = 0.6 * nearby_dets['spatial_score'] + 0.4 * (1.0 - (nearby_dets['frame_diff'] / 10.0).clip(0, 1))
-            
-            # Get best match candidate
-            closest_det = nearby_dets.loc[nearby_dets['combined_score'].idxmax()]
-            
             # ---------------------------------------------------------
-            # BALL PROXIMITY VERIFICATION
+            # BALL PROXIMITY VERIFICATION & CANDIDATE SELECTION
             # ---------------------------------------------------------
-            ball_verified = False
-            ball_dist = float('inf')
+            # We do this BEFORE picking the best candidate, so we can use ball proximity
+            # to resolve duplicates (e.g. if there are 3 players with Jersey 11, pick the one with the ball)
+            
+            ball_dets = []
+            ball_detected_in_frame = False
             
             if has_ball_detector and frames_dir and frames_dir.exists():
-                # Construct frame path (assuming standard SoccerNet structure)
-                # Image IDs are usually like "2021000001" -> we need to map frame number to filename
-                # Simple heuristic: frame number formatted with leading zeros? 
-                # Or just list dir and find matching number?
-                # SoccerNetGS usually has 00001.jpg or similar
-                
-                # Try to find the image file
-                # We know action_frame is an integer (e.g. 298)
-                # We need to find the file that corresponds to this frame
-                # Let's try a few common formats
+                # Try to find the image file for the ACTION frame
                 candidates = [
                     frames_dir / f"{action_frame:06d}.jpg",
                     frames_dir / f"{action_frame:06d}.png",
@@ -606,47 +580,81 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     frame_img = cv2.imread(str(frame_path))
                     if frame_img is not None:
                         ball_dets = ball_detector.detect(frame_img)
-                        
                         if ball_dets:
-                            # Get player bbox
-                            p_bbox = closest_det['bbox_ltwh'] # [left, top, width, height]
-                            p_center = (p_bbox[0] + p_bbox[2]/2, p_bbox[1] + p_bbox[3]/2)
-                            
-                            # Find closest ball
-                            min_dist = float('inf')
-                            for b in ball_dets:
-                                b_center = b.center
-                                # Euclidean distance
-                                d = ((p_center[0] - b_center[0])**2 + (p_center[1] - b_center[1])**2)**0.5
-                                if d < min_dist:
-                                    min_dist = d
-                            
-                            ball_dist = min_dist
-                            # Threshold: 150 pixels (approx 1-2 meters in 1080p)
-                            if ball_dist < 150:
-                                ball_verified = True
-                        else:
-                            # No ball detected - ambiguous
-                            ball_dist = -1 
+                            ball_detected_in_frame = True
+
+            # Evaluate all candidates
+            candidates = []
+            for idx, row in nearby_dets.iterrows():
+                # 1. Spatial Score
+                if pd.isna(row['bbox_ltwh']).any():
+                    spatial_score = 0.0
+                    bbox_center = None
+                else:
+                    left, top, width, height = row['bbox_ltwh']
+                    bbox_center = (left + width / 2, top + height / 2)
+                    dist_x = abs(bbox_center[0] - center_x)
+                    dist_y = abs(bbox_center[1] - center_y)
+                    spatial_score = max(0, 1 - (dist_x / 800 + dist_y / 500) / 2)
                 
-            # ---------------------------------------------------------
+                # 2. Temporal Score
+                frame_diff = abs(row['frame_num'] - action_frame)
+                temporal_score = 1.0 - (frame_diff / 10.0).clip(0, 1)
+                
+                # 3. Ball Proximity Score (Only if frame matches exactly or very close)
+                ball_dist = float('inf')
+                ball_score = 0.0
+                
+                if ball_detected_in_frame and frame_diff <= 1 and bbox_center:
+                    # Find closest ball to this specific candidate
+                    min_dist = float('inf')
+                    for b in ball_dets:
+                        b_center = b.center
+                        d = ((bbox_center[0] - b_center[0])**2 + (bbox_center[1] - b_center[1])**2)**0.5
+                        if d < min_dist:
+                            min_dist = d
+                    
+                    ball_dist = min_dist
+                    if ball_dist < 150:
+                        # Huge boost if ball is verified near this candidate
+                        ball_score = 2.0
+                
+                # Combined Score
+                # Base: 60% spatial, 40% temporal
+                # Bonus: +2.0 if ball is confirmed
+                final_score = (0.6 * spatial_score) + (0.4 * temporal_score) + ball_score
+                
+                candidates.append({
+                    'det': row,
+                    'score': final_score,
+                    'spatial': spatial_score,
+                    'ball_dist': ball_dist,
+                    'frame_diff': frame_diff
+                })
+            
+            # Pick the best candidate
+            if not candidates:
+                continue
+                
+            best_match = max(candidates, key=lambda x: x['score'])
+            closest_det = best_match['det']
+            ball_dist = best_match['ball_dist']
             
             print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}):")
-            print(f"  Best match: frame_diff={int(closest_det['frame_diff'])}, spatial={closest_det['spatial_score']:.3f}")
+            print(f"  Selected candidate from {len(candidates)} options:")
+            print(f"    - Frame diff: {best_match['frame_diff']}")
+            print(f"    - Spatial score: {best_match['spatial']:.3f}")
+            
             if has_ball_detector:
-                status = "✅ VERIFIED" if ball_verified else ("❌ TOO FAR" if ball_dist > 0 else "⚠️ NO BALL DETECTED")
-                print(f"  Ball Distance: {ball_dist:.1f} px -> {status}")
+                status = "✅ VERIFIED" if ball_dist < 150 else ("❌ TOO FAR" if ball_dist != float('inf') else "⚠️ NO BALL DETECTED")
+                print(f"    - Ball Distance: {ball_dist:.1f} px -> {status}")
             
             # DECISION LOGIC
-            # 1. If ball verified: MATCH!
-            # 2. If no ball detected but spatial score is decent (>0.3): MATCH (fallback)
-            # 3. Otherwise: REJECT
-            
             is_match = False
-            if ball_verified:
+            if ball_dist < 150:
                 is_match = True
-            elif ball_dist == -1 and closest_det['spatial_score'] > 0.3 and closest_det['frame_diff'] <= 5:
-                # Fallback if ball detection failed but player is reasonably central and synced
+            elif ball_dist == float('inf') and best_match['spatial'] > 0.3 and best_match['frame_diff'] <= 5:
+                # Fallback if ball detection failed (or frame mismatch) but player is reasonably central
                 is_match = True
                 print("  -> Accepted by spatial fallback (ball not detected)")
             
@@ -656,8 +664,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     'frame': action_frame,
                     'confidence': action['confidence'],
                     'player_frame': int(closest_det['frame_num']),
-                    'frame_offset': int(closest_det['frame_diff']),
-                    'spatial_score': float(closest_det['spatial_score']),
+                    'frame_offset': int(best_match['frame_diff']),
+                    'spatial_score': float(best_match['spatial']),
                     'ball_distance': float(ball_dist) if ball_dist != float('inf') else None
                 })
             else:

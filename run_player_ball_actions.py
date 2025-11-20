@@ -564,8 +564,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             
             # Only match if:
             # 1. Player is close in time (within 10 frames)
-            # 2. Player has decent spatial score (>0.25 = reasonably central - LOWERED from 0.3)
-            if closest_det['frame_diff'] <= 10 and closest_det['spatial_score'] > 0.25:
+            # 2. Player has decent spatial score (>0.6 = VERY central)
+            # NOTE: Increased threshold to 0.6 to be much stricter
+            if closest_det['frame_diff'] <= 10 and closest_det['spatial_score'] > 0.6:
                 matched_actions.append({
                     'action': action['action'],
                     'frame': action_frame,
@@ -576,7 +577,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     'combined_score': float(closest_det['combined_score'])
                 })
             else:
-                print(f"  ❌ Filtered out: spatial < 0.25 or frame_diff > 10")
+                print(f"  ❌ Filtered out: spatial < 0.6 or frame_diff > 10")
     
     # Filter by minimum time between actions (remove rapid-fire detections)
     if len(matched_actions) > 1:

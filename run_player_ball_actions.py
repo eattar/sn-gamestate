@@ -502,15 +502,146 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     center_x = frame_width / 2
     center_y = frame_height / 2
     
-    # Try to detect ball if video is available
-    ball_detections = {}
+    # Initialize Ball Detector (YOLOv8)
+    print("Initializing Ball Detector for verification...")
     try:
-        # Only if we have the video path (passed via args usually, but here we might need to infer it)
-        # For now, we'll skip actual ball detection integration in this function 
-        # and rely on the improved spatial filtering
-        pass
-    except Exception:
-        pass
+        from src.player_tracking.detector import PlayerDetector
+        # Class 32 is 'sports ball' in COCO dataset
+        ball_detector = PlayerDetector(model_name='yolov8n.pt', classes=[32], conf_threshold=0.15, device='cpu')
+        has_ball_detector = True
+        print("   ✓ Ball detector ready")
+    except Exception as e:
+        print(f"   ⚠️  Could not initialize ball detector: {e}")
+        print("   Continuing with spatial filtering only.")
+        has_ball_detector = False
+        ball_detector = None
+
+    for action in tqdm(filtered_actions, desc="Matching actions"):
+        action_frame = action['frame']
+        
+        # Get player detections within time window
+        nearby_dets = player_dets_work[
+            (player_dets_work['frame_num'] >= action_frame - window_frames) &
+            (player_dets_work['frame_num'] <= action_frame + window_frames)
+        ]
+        
+        if len(nearby_dets) == 0:
+            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}): No player detections in ±{window_frames} frame window")
+        
+        if len(nearby_dets) > 0:
+            # Find closest detection by frame
+            nearby_dets = nearby_dets.copy()
+            nearby_dets['frame_diff'] = abs(nearby_dets['frame_num'] - action_frame)
+            
+            # Add spatial scoring
+            def calculate_spatial_score(bbox):
+                if pd.isna(bbox).any(): return 0.0
+                left, top, width, height = bbox
+                bbox_center_x = left + width / 2
+                bbox_center_y = top + height / 2
+                dist_x = abs(bbox_center_x - center_x)
+                dist_y = abs(bbox_center_y - center_y)
+                return max(0, 1 - (dist_x / 400 + dist_y / 300) / 2)
+            
+            nearby_dets['spatial_score'] = nearby_dets['bbox_ltwh'].apply(calculate_spatial_score)
+            
+            # Combined score
+            nearby_dets['combined_score'] = 0.6 * nearby_dets['spatial_score'] + 0.4 * (1.0 - (nearby_dets['frame_diff'] / 10.0).clip(0, 1))
+            
+            # Get best match candidate
+            closest_det = nearby_dets.loc[nearby_dets['combined_score'].idxmax()]
+            
+            # ---------------------------------------------------------
+            # BALL PROXIMITY VERIFICATION
+            # ---------------------------------------------------------
+            ball_verified = False
+            ball_dist = float('inf')
+            
+            if has_ball_detector and frames_dir and frames_dir.exists():
+                # Construct frame path (assuming standard SoccerNet structure)
+                # Image IDs are usually like "2021000001" -> we need to map frame number to filename
+                # Simple heuristic: frame number formatted with leading zeros? 
+                # Or just list dir and find matching number?
+                # SoccerNetGS usually has 00001.jpg or similar
+                
+                # Try to find the image file
+                # We know action_frame is an integer (e.g. 298)
+                # We need to find the file that corresponds to this frame
+                # Let's try a few common formats
+                candidates = [
+                    frames_dir / f"{action_frame:06d}.jpg",
+                    frames_dir / f"{action_frame:06d}.png",
+                    frames_dir / f"{action_frame}.jpg",
+                    frames_dir / f"img1/{action_frame:06d}.jpg"
+                ]
+                
+                frame_path = None
+                for c in candidates:
+                    if c.exists():
+                        frame_path = c
+                        break
+                
+                if frame_path:
+                    import cv2
+                    frame_img = cv2.imread(str(frame_path))
+                    if frame_img is not None:
+                        ball_dets = ball_detector.detect(frame_img)
+                        
+                        if ball_dets:
+                            # Get player bbox
+                            p_bbox = closest_det['bbox_ltwh'] # [left, top, width, height]
+                            p_center = (p_bbox[0] + p_bbox[2]/2, p_bbox[1] + p_bbox[3]/2)
+                            
+                            # Find closest ball
+                            min_dist = float('inf')
+                            for b in ball_dets:
+                                b_center = b.center
+                                # Euclidean distance
+                                d = ((p_center[0] - b_center[0])**2 + (p_center[1] - b_center[1])**2)**0.5
+                                if d < min_dist:
+                                    min_dist = d
+                            
+                            ball_dist = min_dist
+                            # Threshold: 150 pixels (approx 1-2 meters in 1080p)
+                            if ball_dist < 150:
+                                ball_verified = True
+                        else:
+                            # No ball detected - ambiguous
+                            ball_dist = -1 
+                
+            # ---------------------------------------------------------
+            
+            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}):")
+            print(f"  Best match: frame_diff={int(closest_det['frame_diff'])}, spatial={closest_det['spatial_score']:.3f}")
+            if has_ball_detector:
+                status = "✅ VERIFIED" if ball_verified else ("❌ TOO FAR" if ball_dist > 0 else "⚠️ NO BALL DETECTED")
+                print(f"  Ball Distance: {ball_dist:.1f} px -> {status}")
+            
+            # DECISION LOGIC
+            # 1. If ball verified: MATCH!
+            # 2. If no ball detected but spatial score is very high (>0.6): MATCH (fallback)
+            # 3. Otherwise: REJECT
+            
+            is_match = False
+            if ball_verified:
+                is_match = True
+            elif ball_dist == -1 and closest_det['spatial_score'] > 0.6 and closest_det['frame_diff'] <= 5:
+                # Fallback if ball detection failed but player is dead center and perfectly synced
+                is_match = True
+                print("  -> Accepted by spatial fallback (ball not detected)")
+            
+            if is_match:
+                matched_actions.append({
+                    'action': action['action'],
+                    'frame': action_frame,
+                    'confidence': action['confidence'],
+                    'player_frame': int(closest_det['frame_num']),
+                    'frame_offset': int(closest_det['frame_diff']),
+                    'spatial_score': float(closest_det['spatial_score']),
+                    'ball_distance': float(ball_dist) if ball_dist != float('inf') else None
+                })
+            else:
+                print(f"  ❌ Filtered out")
     
     for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']

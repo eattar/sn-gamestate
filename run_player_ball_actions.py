@@ -509,7 +509,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     try:
         from src.player_tracking.detector import PlayerDetector
         # Class 32 is 'sports ball' in COCO dataset
-        ball_detector = PlayerDetector(model_name='yolov8n.pt', classes=[32], conf_threshold=0.15, device='cpu')
+        # Using 'm' (medium) model for better small object detection
+        ball_detector = PlayerDetector(model_name='yolov8m.pt', classes=[32], conf_threshold=0.15, device='cpu')
         has_ball_detector = True
         print("   ✓ Ball detector ready")
     except Exception as e:
@@ -543,7 +544,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 bbox_center_y = top + height / 2
                 dist_x = abs(bbox_center_x - center_x)
                 dist_y = abs(bbox_center_y - center_y)
-                return max(0, 1 - (dist_x / 400 + dist_y / 300) / 2)
+                # Relaxed spatial scoring: allow players further from center
+                # Denominators increased: 400->800 (x), 300->500 (y)
+                return max(0, 1 - (dist_x / 800 + dist_y / 500) / 2)
             
             nearby_dets['spatial_score'] = nearby_dets['bbox_ltwh'].apply(calculate_spatial_score)
             
@@ -627,8 +630,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             is_match = False
             if ball_verified:
                 is_match = True
-            elif ball_dist == -1 and closest_det['spatial_score'] > 0.6 and closest_det['frame_diff'] <= 5:
-                # Fallback if ball detection failed but player is dead center and perfectly synced
+            # Relaxed fallback: lowered threshold 0.6 -> 0.3
+            elif ball_dist == -1 and closest_det['spatial_score'] > 0.3 and closest_det['frame_diff'] <= 5:
+                # Fallback if ball detection failed but player is reasonably central and synced
                 is_match = True
                 print("  -> Accepted by spatial fallback (ball not detected)")
             
@@ -644,73 +648,6 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 })
             else:
                 print(f"  ❌ Filtered out")
-    
-    for action in tqdm(filtered_actions, desc="Matching actions"):
-        action_frame = action['frame']
-        
-        # Get player detections within time window
-        nearby_dets = player_dets_work[
-            (player_dets_work['frame_num'] >= action_frame - window_frames) &
-            (player_dets_work['frame_num'] <= action_frame + window_frames)
-        ]
-        
-        if len(nearby_dets) == 0:
-            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}): No player detections in ±{window_frames} frame window")
-        
-        if len(nearby_dets) > 0:
-            # Find closest detection by frame
-            nearby_dets = nearby_dets.copy()
-            nearby_dets['frame_diff'] = abs(nearby_dets['frame_num'] - action_frame)
-            
-            # Add spatial scoring - actions typically happen in center of frame
-            # bbox_ltwh format: [left, top, width, height]
-            def calculate_spatial_score(bbox):
-                """Calculate how central the player is (0-1, higher = more central)"""
-                if pd.isna(bbox).any():
-                    return 0.0
-                left, top, width, height = bbox
-                # Calculate center of bbox
-                bbox_center_x = left + width / 2
-                bbox_center_y = top + height / 2
-                # Distance from frame center
-                dist_x = abs(bbox_center_x - center_x)
-                dist_y = abs(bbox_center_y - center_y)
-                # Normalize to 0-1 (closer to center = higher score)
-                # Use reasonable thresholds: 400px horizontal, 300px vertical
-                spatial_score = max(0, 1 - (dist_x / 400 + dist_y / 300) / 2)
-                return spatial_score
-            
-            nearby_dets['spatial_score'] = nearby_dets['bbox_ltwh'].apply(calculate_spatial_score)
-            
-            # Combined score: temporal (frame_diff) + spatial (centrality)
-            # Normalize frame_diff to 0-1 scale (0 frames = 1.0, 10 frames = 0.0)
-            nearby_dets['temporal_score'] = 1.0 - (nearby_dets['frame_diff'] / 10.0).clip(0, 1)
-            # Combined: 60% spatial, 40% temporal (spatial is more important for distinguishing players)
-            nearby_dets['combined_score'] = 0.6 * nearby_dets['spatial_score'] + 0.4 * nearby_dets['temporal_score']
-            
-            # Get best match by combined score
-            closest_det = nearby_dets.loc[nearby_dets['combined_score'].idxmax()]
-            
-            # Debug: print filtering decisions
-            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}):")
-            print(f"  Best match: frame_diff={int(closest_det['frame_diff'])}, spatial={closest_det['spatial_score']:.3f}, combined={closest_det['combined_score']:.3f}")
-            
-            # Only match if:
-            # 1. Player is close in time (within 10 frames)
-            # 2. Player has decent spatial score (>0.6 = VERY central)
-            # NOTE: Increased threshold to 0.6 to be much stricter
-            if closest_det['frame_diff'] <= 10 and closest_det['spatial_score'] > 0.6:
-                matched_actions.append({
-                    'action': action['action'],
-                    'frame': action_frame,
-                    'confidence': action['confidence'],
-                    'player_frame': int(closest_det['frame_num']),
-                    'frame_offset': int(closest_det['frame_diff']),
-                    'spatial_score': float(closest_det['spatial_score']),
-                    'combined_score': float(closest_det['combined_score'])
-                })
-            else:
-                print(f"  ❌ Filtered out: spatial < 0.6 or frame_diff > 10")
     
     # Filter by minimum time between actions (remove rapid-fire detections)
     if len(matched_actions) > 1:

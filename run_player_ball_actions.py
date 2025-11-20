@@ -448,7 +448,8 @@ def run_ball_action_detection(video_path: str, experiment: str, fold: int, devic
 
 def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame, 
                             window_frames: int = 50, min_confidence: float = 0.7,
-                            min_time_between_actions: float = 2.0, fps: float = 25.0) -> List[Dict]:
+                            min_time_between_actions: float = 2.0, fps: float = 25.0,
+                            frames_dir: Optional[Path] = None) -> List[Dict]:
     """
     Match detected actions to player using temporal proximity and spatial overlap
     
@@ -459,6 +460,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
         min_confidence: Minimum confidence threshold for actions
         min_time_between_actions: Minimum seconds between consecutive actions (filters false positives)
         fps: Frames per second (for time-based filtering)
+        frames_dir: Directory containing image frames (for ball verification)
         
     Returns:
         List of matched actions with player info
@@ -858,7 +860,8 @@ def main():
         window_frames=50,
         min_confidence=0.75,  # Higher threshold to reduce false positives
         min_time_between_actions=3.0,  # At least 3 seconds between actions
-        fps=25.0
+        fps=25.0,
+        frames_dir=frames_dir
     )
     
     # Step 5: Create output

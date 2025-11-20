@@ -192,19 +192,37 @@ def load_tracking_state(state_path: str) -> pd.DataFrame:
     print(f"\n📂 Loading tracking state from: {state_path}")
     
     # Try different decompression methods
-    # .pklz files can be gzip or zip compressed
+    # .pklz files can be gzip or zip compressed, containing pickle or JSON
+    import zipfile
+    
     try:
         # First try gzip
         with gzip.open(state_path, 'rb') as f:
             tracker_state = pickle.load(f)
     except gzip.BadGzipFile:
         # If not gzip, try zip
-        import zipfile
         with zipfile.ZipFile(state_path, 'r') as zf:
-            # Assume single file in zip
-            filename = zf.namelist()[0]
-            with zf.open(filename) as f:
-                tracker_state = pickle.load(f)
+            # List files to see what's inside
+            filenames = zf.namelist()
+            print(f"  Files in archive: {filenames}")
+            
+            # Try to find pickle file
+            for filename in filenames:
+                if filename.endswith('.pkl') or filename.endswith('.pickle'):
+                    with zf.open(filename, 'r') as f:
+                        tracker_state = pickle.load(f)
+                    break
+            else:
+                # If no pickle file, try JSON
+                filename = filenames[0]
+                print(f"  Loading JSON file: {filename}")
+                with zf.open(filename, 'r') as f:
+                    import json
+                    data = json.load(f)
+                    # Convert JSON to tracker state format
+                    # This will depend on the actual JSON structure
+                    print(f"  JSON keys: {data.keys() if isinstance(data, dict) else 'not a dict'}")
+                    raise NotImplementedError("JSON format not yet supported - need to implement conversion")
     
     detections = tracker_state.detections_pred
     print(f"✓ Loaded {len(detections)} detections")

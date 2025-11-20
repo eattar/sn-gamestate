@@ -474,6 +474,16 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     filtered_actions = [a for a in actions if a['confidence'] >= min_confidence]
     print(f"   Actions after confidence filter: {len(filtered_actions)}/{len(actions)}")
     
+    if len(filtered_actions) == 0:
+        print("   ⚠️  No actions passed confidence threshold - try lowering min_confidence")
+        return []
+    
+    print(f"\n   Actions to match:")
+    for i, a in enumerate(filtered_actions[:10], 1):  # Show first 10
+        print(f"     {i}. Frame {a['frame']}: {a['action']} (conf={a['confidence']:.3f})")
+    if len(filtered_actions) > 10:
+        print(f"     ... and {len(filtered_actions) - 10} more")
+    
     matched_actions = []
     
     # Convert image_id to numeric for comparison if it's a string
@@ -491,6 +501,16 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     frame_height = 1080
     center_x = frame_width / 2
     center_y = frame_height / 2
+    
+    # Try to detect ball if video is available
+    ball_detections = {}
+    try:
+        # Only if we have the video path (passed via args usually, but here we might need to infer it)
+        # For now, we'll skip actual ball detection integration in this function 
+        # and rely on the improved spatial filtering
+        pass
+    except Exception:
+        pass
     
     for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']
@@ -544,8 +564,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             
             # Only match if:
             # 1. Player is close in time (within 10 frames)
-            # 2. Player has decent spatial score (>0.3 = reasonably central)
-            if closest_det['frame_diff'] <= 10 and closest_det['spatial_score'] > 0.3:
+            # 2. Player has decent spatial score (>0.25 = reasonably central - LOWERED from 0.3)
+            if closest_det['frame_diff'] <= 10 and closest_det['spatial_score'] > 0.25:
                 matched_actions.append({
                     'action': action['action'],
                     'frame': action_frame,
@@ -555,6 +575,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     'spatial_score': float(closest_det['spatial_score']),
                     'combined_score': float(closest_det['combined_score'])
                 })
+            else:
+                print(f"  ❌ Filtered out: spatial < 0.25 or frame_diff > 10")
     
     # Filter by minimum time between actions (remove rapid-fire detections)
     if len(matched_actions) > 1:

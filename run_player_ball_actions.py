@@ -260,29 +260,48 @@ def filter_player_by_jersey(detections: pd.DataFrame, team: str, jersey: int) ->
     print(f"STEP 2: Filtering Player (Team: {team}, Jersey: {jersey})")
     print("="*60)
     
+    # Debug: Print available columns
+    print(f"Available columns: {list(detections.columns)}")
+    
     # Check available teams and jerseys
     if 'team' in detections.columns:
         available_teams = detections['team'].dropna().unique()
         print(f"Available teams: {list(available_teams)}")
     
-    if 'jn_tracklet' in detections.columns:
-        available_jerseys = detections['jn_tracklet'].dropna().unique()
+    # Try different possible jersey column names
+    jersey_col = None
+    for col_name in ['jn_tracklet', 'jersey_number', 'jersey', 'jn']:
+        if col_name in detections.columns:
+            jersey_col = col_name
+            break
+    
+    if jersey_col:
+        available_jerseys = detections[jersey_col].dropna().unique()
         print(f"Available jersey numbers: {sorted([int(j) for j in available_jerseys if pd.notna(j)])}")
+        print(f"Using jersey column: '{jersey_col}'")
+    else:
+        print(f"⚠️  Warning: No jersey column found in detections")
+        print(f"   Cannot filter by jersey number")
     
     # Filter by team and jersey
-    player_dets = detections[
-        (detections['team'] == team) & 
-        (detections['jn_tracklet'] == jersey)
-    ].copy()
+    if jersey_col:
+        player_dets = detections[
+            (detections['team'] == team) & 
+            (detections[jersey_col] == jersey)
+        ].copy()
+    else:
+        # Fall back to team only
+        player_dets = detections[detections['team'] == team].copy()
+        print(f"⚠️  Filtering by team only (no jersey column available)")
     
     if len(player_dets) == 0:
         print(f"\n❌ ERROR: No player found with team='{team}' and jersey={jersey}")
         print("\nAvailable combinations:")
         
-        if 'team' in detections.columns and 'jn_tracklet' in detections.columns:
-            team_jersey = detections[['team', 'jn_tracklet']].dropna().drop_duplicates()
+        if 'team' in detections.columns and jersey_col and jersey_col in detections.columns:
+            team_jersey = detections[['team', jersey_col]].dropna().drop_duplicates()
             for _, row in team_jersey.iterrows():
-                print(f"  - Team: {row['team']}, Jersey: {int(row['jn_tracklet'])}")
+                print(f"  - Team: {row['team']}, Jersey: {int(row[jersey_col])}")
         
         sys.exit(1)
     

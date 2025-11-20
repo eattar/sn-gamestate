@@ -624,17 +624,22 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             
             # DECISION LOGIC
             # 1. If ball verified: MATCH!
-            # 2. If no ball detected but spatial score is very high (>0.6): MATCH (fallback)
-            # 3. Otherwise: REJECT
+            # 2. If no ball detected but spatial score is decent (>0.3): MATCH (fallback)
+            # 3. If no ball detected but timing is perfect (<=2 frames): MATCH (tight sync fallback)
             
             is_match = False
             if ball_verified:
                 is_match = True
-            # Relaxed fallback: lowered threshold 0.6 -> 0.3
-            elif ball_dist == -1 and closest_det['spatial_score'] > 0.3 and closest_det['frame_diff'] <= 5:
-                # Fallback if ball detection failed but player is reasonably central and synced
-                is_match = True
-                print("  -> Accepted by spatial fallback (ball not detected)")
+            elif ball_dist == -1:
+                # Fallback 1: Reasonably central and close in time
+                if closest_det['spatial_score'] > 0.3 and closest_det['frame_diff'] <= 5:
+                    is_match = True
+                    print("  -> Accepted by spatial fallback (central-ish)")
+                # Fallback 2: Very close in time (tight sync), allow edge of screen
+                # spatial=0.149 was rejected before, so we lower threshold to 0.1 for tight matches
+                elif closest_det['frame_diff'] <= 2 and closest_det['spatial_score'] > 0.1:
+                    is_match = True
+                    print("  -> Accepted by temporal fallback (tight sync)")
             
             if is_match:
                 matched_actions.append({

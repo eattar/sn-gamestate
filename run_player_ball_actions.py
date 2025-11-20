@@ -189,7 +189,7 @@ def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.
     print("="*60)
     
     from hydra import compose, initialize_config_dir
-    from tracklab.engine import run_tracklab
+    from tracklab.__main__ import run as run_tracklab
     
     # Get config directory
     config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")

@@ -839,10 +839,18 @@ def main():
         # Save video if requested
         if args.save_video:
             import shutil
-            save_path = Path(args.save_video)
-            shutil.copy(temp_video, save_path)
-            print(f"✓ Video saved to: {save_path}")
-            cleanup_video = False  # Don't delete if we saved a copy
+            save_path = Path(args.save_video).resolve()
+            try:
+                shutil.copy(temp_video, save_path)
+                print(f"✓ Video saved to: {save_path}")
+                # Ensure we don't delete the temp video if it's the same file
+                if temp_video.resolve() == save_path:
+                    cleanup_video = False
+                else:
+                    cleanup_video = True # We have a copy, so we can clean up temp
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to save video to {save_path}: {e}")
+                cleanup_video = True
         else:
             cleanup_video = True
     else:

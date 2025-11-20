@@ -447,7 +447,8 @@ def run_ball_action_detection(video_path: str, experiment: str, fold: int, devic
 
 
 def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame, 
-                            window_frames: int = 50) -> List[Dict]:
+                            window_frames: int = 50, min_confidence: float = 0.7,
+                            min_time_between_actions: float = 2.0, fps: float = 25.0) -> List[Dict]:
     """
     Match detected actions to player using temporal proximity and spatial overlap
     
@@ -455,6 +456,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
         actions: List of detected actions
         player_dets: Player detections dataframe
         window_frames: Frame window for matching (±N frames)
+        min_confidence: Minimum confidence threshold for actions
+        min_time_between_actions: Minimum seconds between consecutive actions (filters false positives)
+        fps: Frames per second (for time-based filtering)
         
     Returns:
         List of matched actions with player info
@@ -463,6 +467,12 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     print("STEP 4: Matching Actions to Player")
     print("="*60)
     print(f"   Using ±{window_frames} frame window for matching")
+    print(f"   Minimum confidence: {min_confidence}")
+    print(f"   Minimum time between actions: {min_time_between_actions}s")
+    
+    # Filter by confidence first
+    filtered_actions = [a for a in actions if a['confidence'] >= min_confidence]
+    print(f"   Actions after confidence filter: {len(filtered_actions)}/{len(actions)}")
     
     matched_actions = []
     
@@ -476,7 +486,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     else:
         player_dets_work['frame_num'] = pd.to_numeric(player_dets_work['image_id'], errors='coerce')
     
-    for action in tqdm(actions, desc="Matching actions"):
+    for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']
         
         # Get player detections within time window
@@ -491,16 +501,33 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             nearby_dets['frame_diff'] = abs(nearby_dets['frame_num'] - action_frame)
             closest_det = nearby_dets.loc[nearby_dets['frame_diff'].idxmin()]
             
-            matched_actions.append({
-                'action': action['action'],
-                'frame': action_frame,
-                'confidence': action['confidence'],
-                'player_frame': int(closest_det['frame_num']),
-                'frame_offset': int(closest_det['frame_diff'])
-            })
+            # Only match if player is very close in time (within 10 frames = 0.4 seconds)
+            if closest_det['frame_diff'] <= 10:
+                matched_actions.append({
+                    'action': action['action'],
+                    'frame': action_frame,
+                    'confidence': action['confidence'],
+                    'player_frame': int(closest_det['frame_num']),
+                    'frame_offset': int(closest_det['frame_diff'])
+                })
+    
+    # Filter by minimum time between actions (remove rapid-fire detections)
+    if len(matched_actions) > 1:
+        filtered_matched = [matched_actions[0]]  # Keep first action
+        min_frame_gap = int(min_time_between_actions * fps)
+        
+        for action in matched_actions[1:]:
+            last_frame = filtered_matched[-1]['frame']
+            if action['frame'] - last_frame >= min_frame_gap:
+                filtered_matched.append(action)
+        
+        removed = len(matched_actions) - len(filtered_matched)
+        if removed > 0:
+            print(f"   Removed {removed} actions (too close together)")
+        matched_actions = filtered_matched
     
     print(f"\n✓ Matched {len(matched_actions)} actions to player")
-    print(f"   Unmatched: {len(actions) - len(matched_actions)} (player not visible in frame window)")
+    print(f"   Unmatched: {len(filtered_actions) - len(matched_actions)} (player not visible or too close in time)")
     
     return matched_actions
 
@@ -627,7 +654,13 @@ def main():
     actions = run_ball_action_detection(str(video_path), args.experiment, args.fold, args.device)
     
     # Step 4: Match actions to player
-    matched_actions = match_actions_to_player(actions, player_dets)
+    matched_actions = match_actions_to_player(
+        actions, player_dets,
+        window_frames=50,
+        min_confidence=0.75,  # Higher threshold to reduce false positives
+        min_time_between_actions=3.0,  # At least 3 seconds between actions
+        fps=25.0
+    )
     
     # Step 5: Create output
     print("\n" + "="*60)

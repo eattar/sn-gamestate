@@ -191,8 +191,20 @@ def load_tracking_state(state_path: str) -> pd.DataFrame:
     """Load tracking state from .pklz file"""
     print(f"\n📂 Loading tracking state from: {state_path}")
     
-    with gzip.open(state_path, 'rb') as f:
-        tracker_state = pickle.load(f)
+    # Try different decompression methods
+    # .pklz files can be gzip or zip compressed
+    try:
+        # First try gzip
+        with gzip.open(state_path, 'rb') as f:
+            tracker_state = pickle.load(f)
+    except gzip.BadGzipFile:
+        # If not gzip, try zip
+        import zipfile
+        with zipfile.ZipFile(state_path, 'r') as zf:
+            # Assume single file in zip
+            filename = zf.namelist()[0]
+            with zf.open(filename) as f:
+                tracker_state = pickle.load(f)
     
     detections = tracker_state.detections_pred
     print(f"✓ Loaded {len(detections)} detections")

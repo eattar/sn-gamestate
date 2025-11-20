@@ -188,60 +188,82 @@ def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.
     print("STEP 1: Running SN-GameState Player Tracking")
     print("="*60)
     
-    from hydra import compose, initialize_config_dir
-    from tracklab.__main__ import run as run_tracklab
+    # Run tracklab via subprocess (it's a CLI tool, not a library)
+    # Create a temporary config override file
+    import yaml
     
-    # Get config directory
-    config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
-    
-    with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-        # Load config and modify for single game
-        cfg = compose(config_name="soccernet")
-        
-        # Disable visualization to save time
-        cfg.visualization.cfg.save_videos = False
-        
-        # Remove unnecessary modules (pitch and calibration not needed for action matching)
-        # Keep: bbox_detector, reid, track, jersey_number_detect, tracklet_agg, team, team_side
-        cfg.pipeline = [
+    config_overrides = {
+        'dataset': {
+            'eval_set': split,
+            'nvid': 1,
+            'vids_dict': {split: [game_name]}
+        },
+        'visualization': {
+            'cfg': {'save_videos': False}
+        },
+        'pipeline': [
             'bbox_detector',
-            'reid', 
+            'reid',
             'track',
             'jersey_number_detect',
             'tracklet_agg',
             'team',
             'team_side'
         ]
-        
-        # Configure for specific game
-        cfg.dataset.eval_set = split
-        cfg.dataset.nvid = 1  # Process one video
-        cfg.dataset.vids_dict = {split: [game_name]}
-        
-        print(f"\n📂 Dataset: {cfg.dataset.dataset_path}")
-        print(f"   Split: {split}")
-        print(f"   Game: {game_name}")
-        
-        # Run tracking
-        print("\n▶ Running tracking pipeline...")
-        tracker_state = run_tracklab(cfg)
-        
-        # Get detections
-        detections = tracker_state.detections_pred
-        
-        # Get frames directory
+    }
+    
+    # Build tracklab command with overrides
+    overrides = [
+        f"dataset.eval_set={split}",
+        f"dataset.nvid=1",
+        f"dataset.vids_dict.{split}=[{game_name}]",
+        "visualization.cfg.save_videos=False",
+        "pipeline=[bbox_detector,reid,track,jersey_number_detect,tracklet_agg,team,team_side]"
+    ]
+    
+    cmd = ["tracklab", "-cn", "soccernet"] + overrides
+    
+    print(f"\n📂 Running tracklab for game: {game_name}")
+    print(f"   Split: {split}")
+    print(f"   Command: {' '.join(cmd)}")
+    
+    # Run tracklab
+    print("\n▶ Running tracking pipeline...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"\n❌ ERROR: Tracklab failed")
+        print(f"stdout: {result.stdout}")
+        print(f"stderr: {result.stderr}")
+        sys.exit(1)
+    
+    print("✓ Tracking complete")
+    
+    # Load the saved tracker state
+    # Tracklab saves it to a predictable location based on config
+    from hydra import compose, initialize_config_dir
+    config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
+    
+    with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
+        cfg = compose(config_name="soccernet")
+        state_file = Path(cfg.state.save_file)
         frames_dir = Path(cfg.dataset.dataset_path) / split / game_name
-        
-        # Save state for future use
-        state_file = Path("tracking_state_temp.pklz")
-        print(f"\n💾 Saving tracking state to: {state_file}")
-        with gzip.open(state_file, 'wb') as f:
-            pickle.dump(tracker_state, f)
-        
-        print(f"✓ Tracking complete: {len(detections)} detections")
-        print(f"✓ Frames directory: {frames_dir}")
-        
-        return detections, str(state_file), frames_dir
+    
+    if not state_file.exists():
+        print(f"\n❌ ERROR: Tracker state file not found: {state_file}")
+        print("   Tracklab may not have saved the state properly")
+        sys.exit(1)
+    
+    print(f"\n📂 Loading tracking state from: {state_file}")
+    with gzip.open(state_file, 'rb') as f:
+        tracker_state = pickle.load(f)
+    
+    detections = tracker_state.detections_pred
+    
+    print(f"✓ Loaded {len(detections)} detections")
+    print(f"✓ Frames directory: {frames_dir}")
+    
+    return detections, str(state_file), frames_dir
 
 
 def load_tracking_state(state_path: str) -> pd.DataFrame:

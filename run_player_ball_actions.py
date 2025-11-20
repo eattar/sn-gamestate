@@ -62,20 +62,34 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage - SoccerNetGS game
-  python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10
+  # Step 1: Run tracklab to generate tracker state (do this first!)
+  uv run tracklab -cn soccernet dataset.eval_set=valid dataset.vids_dict.valid=[SNGS-001]
   
-  # Specify dataset split
-  python run_player_ball_actions.py --game SNGS-001 --split valid --team right --jersey 7
+  # Step 2: Run ball-action integration with the tracker state
+  python run_player_ball_actions.py \
+    --game SNGS-001 \
+    --split valid \
+    --team left \
+    --jersey 10 \
+    --state-cache outputs/sn-gamestate/YYYY-MM-DD/HH-MM-SS/states/sn-gamestate.pklz
   
-  # Specify output file
-  python run_player_ball_actions.py --game SNGS-001 --team right --jersey 7 --output player7_actions.json
+  # With custom output file
+  python run_player_ball_actions.py \
+    --game SNGS-001 \
+    --split valid \
+    --team right \
+    --jersey 7 \
+    --state-cache tracking_state.pklz \
+    --output player7_actions.json
   
-  # Use cached tracking state
-  python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10 --state-cache tracking_state.pklz
-  
-  # Use specific ball-action model
-  python run_player_ball_actions.py --game SNGS-001 --team left --jersey 10 --experiment ball_finetune_long_004 --fold 5
+  # Specify frames directory manually
+  python run_player_ball_actions.py \
+    --game SNGS-001 \
+    --split valid \
+    --team left \
+    --jersey 10 \
+    --state-cache tracking_state.pklz \
+    --frames-dir /path/to/SoccerNetGS/valid/SNGS-001
         """
     )
     
@@ -90,16 +104,16 @@ Examples:
                         help='Player jersey number')
     parser.add_argument('--output', type=str,
                         help='Output JSON file (default: player_<jersey>_<team>_actions.json)')
-    parser.add_argument('--state-cache', type=str,
-                        help='Path to cached tracking state .pklz file (skip tracking if provided)')
+    parser.add_argument('--state-cache', type=str, required=True,
+                        help='Path to cached tracking state .pklz file (REQUIRED - run tracklab separately first)')
+    parser.add_argument('--frames-dir', type=str,
+                        help='Path to directory with image frames (auto-detected if not provided)')
     parser.add_argument('--experiment', type=str, default='ball_finetune_long_004',
                         help='Ball-action experiment name (default: ball_finetune_long_004)')
     parser.add_argument('--fold', type=int, default=5,
                         help='Model fold number (default: 5, which has 90.1%% accuracy)')
     parser.add_argument('--device', type=str, default='cuda:0',
                         help='Device for ball-action model (default: cuda:0)')
-    parser.add_argument('--skip-tracking', action='store_true',
-                        help='Skip player tracking (requires --state-cache)')
     
     return parser.parse_args()
 
@@ -171,99 +185,6 @@ def convert_frames_to_video(frames_dir: Path, output_video: Path, fps: int = 25)
     except Exception as e:
         print(f"\n❌ ERROR during video conversion: {e}")
         return False
-
-
-def run_sn_gamestate_tracking(game_name: str, split: str = 'valid') -> Tuple[pd.DataFrame, str, Path]:
-    """
-    Run SN-GameState tracking pipeline on game
-    
-    Args:
-        game_name: Game name (e.g., 'SNGS-001')
-        split: Dataset split ('train', 'valid', 'test', 'challenge')
-        
-    Returns:
-        Tuple of (detections_dataframe, state_file_path, frames_directory)
-    """
-    print("\n" + "="*60)
-    print("STEP 1: Running SN-GameState Player Tracking")
-    print("="*60)
-    
-    # Run tracklab via subprocess (it's a CLI tool, not a library)
-    # Create a temporary config override file
-    import yaml
-    
-    config_overrides = {
-        'dataset': {
-            'eval_set': split,
-            'nvid': 1,
-            'vids_dict': {split: [game_name]}
-        },
-        'visualization': {
-            'cfg': {'save_videos': False}
-        },
-        'pipeline': [
-            'bbox_detector',
-            'reid',
-            'track',
-            'jersey_number_detect',
-            'tracklet_agg',
-            'team',
-            'team_side'
-        ]
-    }
-    
-    # Build tracklab command with overrides
-    overrides = [
-        f"dataset.eval_set={split}",
-        f"dataset.nvid=1",
-        f"dataset.vids_dict.{split}=[{game_name}]",
-        "visualization.cfg.save_videos=False",
-        "pipeline=[bbox_detector,reid,track,jersey_number_detect,tracklet_agg,team,team_side]"
-    ]
-    
-    cmd = ["tracklab", "-cn", "soccernet"] + overrides
-    
-    print(f"\n📂 Running tracklab for game: {game_name}")
-    print(f"   Split: {split}")
-    print(f"   Command: {' '.join(cmd)}")
-    
-    # Run tracklab
-    print("\n▶ Running tracking pipeline...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode != 0:
-        print(f"\n❌ ERROR: Tracklab failed")
-        print(f"stdout: {result.stdout}")
-        print(f"stderr: {result.stderr}")
-        sys.exit(1)
-    
-    print("✓ Tracking complete")
-    
-    # Load the saved tracker state
-    # Tracklab saves it to a predictable location based on config
-    from hydra import compose, initialize_config_dir
-    config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
-    
-    with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-        cfg = compose(config_name="soccernet")
-        state_file = Path(cfg.state.save_file)
-        frames_dir = Path(cfg.dataset.dataset_path) / split / game_name
-    
-    if not state_file.exists():
-        print(f"\n❌ ERROR: Tracker state file not found: {state_file}")
-        print("   Tracklab may not have saved the state properly")
-        sys.exit(1)
-    
-    print(f"\n📂 Loading tracking state from: {state_file}")
-    with gzip.open(state_file, 'rb') as f:
-        tracker_state = pickle.load(f)
-    
-    detections = tracker_state.detections_pred
-    
-    print(f"✓ Loaded {len(detections)} detections")
-    print(f"✓ Frames directory: {frames_dir}")
-    
-    return detections, str(state_file), frames_dir
 
 
 def load_tracking_state(state_path: str) -> pd.DataFrame:
@@ -552,16 +473,30 @@ def main():
         game_name = args.game
         video_path = None
     
-    # Step 1: Get tracking detections from image frames
-    if args.state_cache and Path(args.state_cache).exists():
-        detections = load_tracking_state(args.state_cache)
-        frames_dir = None  # Will need to be provided if needed
-    elif args.skip_tracking:
-        print("\n❌ ERROR: --skip-tracking requires --state-cache with valid file")
+    # Step 1: Load tracking detections from pre-computed state
+    print("\n📂 Loading pre-computed tracking state...")
+    print("   (Run tracklab separately first to generate this file)")
+    
+    if not Path(args.state_cache).exists():
+        print(f"\n❌ ERROR: Tracker state file not found: {args.state_cache}")
+        print("\nTo generate tracker state, run tracklab first:")
+        print(f"  cd /workspace/sn-gamestate")
+        print(f"  uv run tracklab -cn soccernet dataset.eval_set={args.split} dataset.vids_dict.{args.split}=[{game_name}]")
+        print(f"\nThis will create a .pklz file in the outputs directory")
         sys.exit(1)
+    
+    detections = load_tracking_state(args.state_cache)
+    
+    # Get frames directory
+    if args.frames_dir:
+        frames_dir = Path(args.frames_dir)
     else:
-        # Run SN-GameState on image frames (native format)
-        detections, state_file, frames_dir = run_sn_gamestate_tracking(game_name, args.split)
+        # Try to infer from config
+        from hydra import compose, initialize_config_dir
+        config_dir = str(Path(__file__).parent / "sn_gamestate" / "configs")
+        with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
+            cfg = compose(config_name="soccernet")
+            frames_dir = Path(cfg.dataset.dataset_path) / args.split / game_name
     
     # Step 1.5: Convert frames to video for ball-action-spotting
     if video_path is None and game_name:

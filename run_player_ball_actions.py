@@ -464,26 +464,36 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     
     matched_actions = []
     
+    # Convert image_id to numeric for comparison if it's a string
+    # image_id format is often like "2021000001" (game_id + frame_num)
+    player_dets_work = player_dets.copy()
+    if player_dets_work['image_id'].dtype == 'object':
+        # Extract frame number from image_id (last 6 digits typically)
+        # Format: GGGG0000FFF where G=game, F=frame
+        player_dets_work['frame_num'] = player_dets_work['image_id'].astype(str).str[-6:].astype(int)
+    else:
+        player_dets_work['frame_num'] = pd.to_numeric(player_dets_work['image_id'], errors='coerce')
+    
     for action in tqdm(actions, desc="Matching actions"):
         action_frame = action['frame']
         
         # Get player detections within time window
-        nearby_dets = player_dets[
-            (player_dets['image_id'] >= action_frame - window_frames) &
-            (player_dets['image_id'] <= action_frame + window_frames)
+        nearby_dets = player_dets_work[
+            (player_dets_work['frame_num'] >= action_frame - window_frames) &
+            (player_dets_work['frame_num'] <= action_frame + window_frames)
         ]
         
         if len(nearby_dets) > 0:
             # Find closest detection by frame
             nearby_dets = nearby_dets.copy()
-            nearby_dets['frame_diff'] = abs(nearby_dets['image_id'] - action_frame)
+            nearby_dets['frame_diff'] = abs(nearby_dets['frame_num'] - action_frame)
             closest_det = nearby_dets.loc[nearby_dets['frame_diff'].idxmin()]
             
             matched_actions.append({
                 'action': action['action'],
                 'frame': action_frame,
                 'confidence': action['confidence'],
-                'player_frame': int(closest_det['image_id']),
+                'player_frame': int(closest_det['frame_num']),
                 'frame_offset': int(closest_det['frame_diff'])
             })
     

@@ -408,11 +408,20 @@ def run_ball_action_detection(video_path: str, experiment: str, fold: int, devic
     frame_indexes = sorted(frame_index2prediction.keys())
     raw_predictions = np.stack([frame_index2prediction[i] for i in frame_indexes], axis=0)
     
+    # Determine number of classes from model output
+    num_model_classes = raw_predictions.shape[1]
+    print(f"   Model outputs {num_model_classes} classes")
+    
     # Post-process to get action events
     from src.utils import post_processing
     
     actions = []
+    # Only process classes that the model actually outputs
     for cls_name, cls_idx in ball_constants.class2target.items():
+        if cls_idx >= num_model_classes:
+            # Skip classes not in model output
+            continue
+            
         action_frames, action_confidences = post_processing(
             frame_indexes, 
             raw_predictions[:, cls_idx],

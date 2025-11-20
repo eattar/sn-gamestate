@@ -501,6 +501,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             (player_dets_work['frame_num'] <= action_frame + window_frames)
         ]
         
+        if len(nearby_dets) == 0:
+            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}): No player detections in ±{window_frames} frame window")
+        
         if len(nearby_dets) > 0:
             # Find closest detection by frame
             nearby_dets = nearby_dets.copy()
@@ -534,6 +537,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             
             # Get best match by combined score
             closest_det = nearby_dets.loc[nearby_dets['combined_score'].idxmax()]
+            
+            # Debug: print filtering decisions
+            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}):")
+            print(f"  Best match: frame_diff={int(closest_det['frame_diff'])}, spatial={closest_det['spatial_score']:.3f}, combined={closest_det['combined_score']:.3f}")
             
             # Only match if:
             # 1. Player is close in time (within 10 frames)

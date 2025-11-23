@@ -126,6 +126,8 @@ Examples:
                         help='Direct path to Labels-GameState.json (overrides data-dir + split + game logic)')
     parser.add_argument('--analyze-jerseys', action='store_true',
                         help='Analyze per-track jersey stability and majority vote reassignment (diagnostic)')
+    parser.add_argument('--show-all-actions', action='store_true',
+                        help='Show all detected actions with nearest player attribution (for verification)')
     
     return parser.parse_args()
 
@@ -1129,6 +1131,142 @@ def analyze_tracking_data(detections: pd.DataFrame):
     sys.exit(0)
 
 
+def show_all_actions_with_players(actions: List[Dict], detections: pd.DataFrame, 
+                                   frames_dir: Optional[Path] = None, fps: float = 25.0):
+    """Display all detected actions with nearest player attribution.
+    
+    For each action, finds the nearest player(s) in space and time,
+    and reports team, jersey, distance, and ball proximity.
+    Useful for manual verification of true/false positives.
+    """
+    print("\n" + "="*70)
+    print("🎯 ALL DETECTED ACTIONS WITH PLAYER ATTRIBUTION")
+    print("="*70)
+    print(f"Total actions: {len(actions)}\n")
+    
+    # Prepare detections
+    dets_work = detections.copy()
+    if dets_work['image_id'].dtype == 'object':
+        dets_work['frame_num'] = dets_work['image_id'].astype(str).str[-6:].astype(int)
+    else:
+        dets_work['frame_num'] = pd.to_numeric(dets_work['image_id'], errors='coerce')
+    
+    jersey_col = None
+    for col in ['jersey_number', 'jn_tracklet', 'jersey', 'jn']:
+        if col in dets_work.columns:
+            jersey_col = col
+            break
+    
+    # Initialize ball detector
+    ball_detector = None
+    try:
+        from ultralytics import YOLO
+        ball_detector = YOLO('yolov8m.pt')
+    except:
+        pass
+    
+    for i, action in enumerate(actions, 1):
+        action_frame = action['frame']
+        action_time = format_time(action_frame, fps)
+        
+        print(f"\n{i}. Frame {action_frame} ({action_time}) | {action['action']} | conf={action['confidence']:.3f}")
+        
+        # Find nearby players (±50 frames)
+        nearby = dets_work[
+            (dets_work['frame_num'] >= action_frame - 50) &
+            (dets_work['frame_num'] <= action_frame + 50)
+        ].copy()
+        
+        if len(nearby) == 0:
+            print("   ⚠️  No players detected nearby")
+            continue
+        
+        # Calculate distances
+        frame_center = (960, 540)  # 1920x1080 center
+        candidates = []
+        
+        for _, row in nearby.iterrows():
+            if pd.isna(row['bbox_ltwh']).any():
+                continue
+            
+            left, top, width, height = row['bbox_ltwh']
+            bbox_center = (left + width/2, top + height/2)
+            
+            # Spatial distance from frame center
+            spatial_dist = ((bbox_center[0] - frame_center[0])**2 + 
+                           (bbox_center[1] - frame_center[1])**2)**0.5
+            
+            # Temporal distance
+            frame_diff = abs(row['frame_num'] - action_frame)
+            
+            team = row.get('team', 'unknown')
+            jersey = int(row[jersey_col]) if jersey_col and pd.notna(row[jersey_col]) else None
+            
+            candidates.append({
+                'team': team,
+                'jersey': jersey,
+                'frame_diff': frame_diff,
+                'spatial_dist': spatial_dist,
+                'bbox_center': bbox_center,
+                'track_id': row.get('track_id')
+            })
+        
+        # Sort by combined score (temporal + spatial)
+        candidates.sort(key=lambda x: x['frame_diff'] + x['spatial_dist']/500)
+        
+        # Try ball detection for top candidate
+        ball_info = ""
+        if ball_detector and frames_dir and len(candidates) > 0:
+            frame_candidates = [
+                frames_dir / f"{action_frame:06d}.jpg",
+                frames_dir / f"{action_frame:06d}.png",
+                frames_dir / f"img1/{action_frame:06d}.jpg"
+            ]
+            frame_path = None
+            for c in frame_candidates:
+                if c.exists():
+                    frame_path = c
+                    break
+            
+            if frame_path:
+                try:
+                    import cv2
+                    frame_img = cv2.imread(str(frame_path))
+                    if frame_img is not None:
+                        results = ball_detector(frame_img, classes=[32], conf=0.15, verbose=False)
+                        if results and len(results) > 0 and len(results[0].boxes) > 0:
+                            ball_dets = results[0].boxes
+                            # Find closest ball to top candidate
+                            min_ball_dist = float('inf')
+                            for b in ball_dets:
+                                b_xywh = b.xywh[0].cpu().numpy()
+                                b_center = (float(b_xywh[0]), float(b_xywh[1]))
+                                d = ((candidates[0]['bbox_center'][0] - b_center[0])**2 + 
+                                    (candidates[0]['bbox_center'][1] - b_center[1])**2)**0.5
+                                if d < min_ball_dist:
+                                    min_ball_dist = d
+                            
+                            if min_ball_dist < 300:
+                                ball_info = f" | ball_dist={min_ball_dist:.0f}px"
+                            else:
+                                ball_info = f" | ball_dist={min_ball_dist:.0f}px (far)"
+                except:
+                    pass
+        
+        # Show top 3 candidates
+        print("   Nearest players:")
+        for j, c in enumerate(candidates[:3], 1):
+            jersey_str = f"#{c['jersey']}" if c['jersey'] else "#?"
+            track_str = f"track_{c['track_id']}" if c.get('track_id') else ""
+            extra = ball_info if j == 1 else ""
+            print(f"     {j}. Team {c['team']}, Jersey {jersey_str} {track_str} | "
+                  f"Δframe={c['frame_diff']}, spatial_dist={c['spatial_dist']:.0f}px{extra}")
+    
+    print("\n" + "="*70)
+    print("💡 Use this output to manually verify actions in the video.")
+    print("="*70 + "\n")
+
+
 def analyze_jersey_assignments(detections: pd.DataFrame, ground_truth: Optional[Dict] = None):
     """Analyze per-track jersey assignment stability and optionally compare to ground truth.
 
@@ -1381,6 +1519,10 @@ def main():
     
     # Step 3: Run ball action detection
     actions = run_ball_action_detection(str(video_path), args.experiment, args.fold, args.device)
+    
+    # Optional: Show all actions with player attribution before filtering
+    if args.show_all_actions:
+        show_all_actions_with_players(actions, detections, frames_dir, fps=25.0)
     
     # Step 4: Match actions to player
     matched_actions = match_actions_to_player(

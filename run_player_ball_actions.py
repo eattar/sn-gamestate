@@ -853,7 +853,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             ]
             frame_path = next((c for c in debug_frame_path_candidates if c.exists()), None)
 
-            if frame_path:
+            if frame_path and has_ball_detector:
                 try:
                     import cv2
                     debug_img = cv2.imread(str(frame_path))

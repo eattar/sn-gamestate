@@ -138,6 +138,8 @@ Examples:
                         help='Use TrackNet for ball detection instead of YOLO (more accurate for soccer balls)')
     parser.add_argument('--tracknet-weights', type=str, default=None,
                         help='Path to TrackNet weights file (optional, uses untrained model if not provided)')
+    parser.add_argument('--skip-ball-verification', action='store_true',
+                        help='Skip ball detection verification - match actions to player by proximity only')
     parser.add_argument('--ball-max-height', type=float, default=0.55,
                         help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.55, lower=ground)')
     parser.add_argument('--ball-min-size', type=int, default=18,
@@ -514,6 +516,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             ball_model: str = 'yolov8x.pt',
                             use_tracknet: bool = False,
                             tracknet_weights: Optional[str] = None,
+                            skip_ball_verification: bool = False,
                             ball_max_height: float = 0.55,
                             ball_min_size: int = 18,
                             ball_max_size: int = 100,
@@ -573,41 +576,47 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     center_x = frame_width / 2
     center_y = frame_height / 2
     
-    # Initialize Ball Detector (TrackNet or YOLO)
-    print("Initializing Ball Detector for verification...")
-    has_ball_detector = False
-    ball_detector = None
-    using_tracknet = False
-    
-    if use_tracknet:
-        try:
-            import sys
-            sys.path.insert(0, str(Path(__file__).parent))
-            from tracknet_detector import TrackNetBallDetector
-            import torch
-            ball_detector = TrackNetBallDetector(
-                model_path=tracknet_weights,
-                device='cuda' if torch.cuda.is_available() else 'cpu',
-                confidence_threshold=ball_confidence
-            )
-            has_ball_detector = True
-            using_tracknet = True
-            print("   ✓ TrackNet ball detector ready")
-        except Exception as e:
-            print(f"   ⚠️  Could not initialize TrackNet: {e}")
-            print("   Falling back to YOLO...")
-    
-    if not using_tracknet:
-        try:
-            from ultralytics import YOLO
-            ball_detector = YOLO(ball_model)
-            has_ball_detector = True
-            print(f"   ✓ YOLO ball detector ready ({ball_model})")
-        except Exception as e:
-            print(f"   ⚠️  Could not initialize ball detector: {e}")
-            print("   Actions will be rejected without ball verification.")
-            has_ball_detector = False
-            ball_detector = None
+    # Initialize Ball Detector (TrackNet or YOLO) - skip if verification disabled
+    if skip_ball_verification:
+        print("Ball verification disabled - matching by player proximity only")
+        has_ball_detector = False
+        ball_detector = None
+        using_tracknet = False
+    else:
+        print("Initializing Ball Detector for verification...")
+        has_ball_detector = False
+        ball_detector = None
+        using_tracknet = False
+        
+        if use_tracknet:
+            try:
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent))
+                from tracknet_detector import TrackNetBallDetector
+                import torch
+                ball_detector = TrackNetBallDetector(
+                    model_path=tracknet_weights,
+                    device='cuda' if torch.cuda.is_available() else 'cpu',
+                    confidence_threshold=ball_confidence
+                )
+                has_ball_detector = True
+                using_tracknet = True
+                print("   ✓ TrackNet ball detector ready")
+            except Exception as e:
+                print(f"   ⚠️  Could not initialize TrackNet: {e}")
+                print("   Falling back to YOLO...")
+        
+        if not using_tracknet:
+            try:
+                from ultralytics import YOLO
+                ball_detector = YOLO(ball_model)
+                has_ball_detector = True
+                print(f"   ✓ YOLO ball detector ready ({ball_model})")
+            except Exception as e:
+                print(f"   ⚠️  Could not initialize ball detector: {e}")
+                print("   Actions will be rejected without ball verification.")
+                has_ball_detector = False
+                ball_detector = None
 
     for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']
@@ -898,9 +907,13 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 ball_frame_info = f" at frame {best_ball_info['frame']}" if best_ball_info['frame'] is not None else ""
                 print(f"    - Ball Distance: {ball_dist:.1f} px{ball_frame_info} -> {status}")
             
-            # DECISION LOGIC: Require ball verification
+            # DECISION LOGIC: Ball verification or proximity-only matching
             is_match = False
-            if ball_dist < max_ball_distance:
+            if skip_ball_verification:
+                # Skip ball verification - accept all actions matched to player
+                is_match = True
+                print("  -> Accepted: player proximity match (ball verification skipped)")
+            elif ball_dist < max_ball_distance:
                 is_match = True
             elif not has_ball_detector:
                 # No ball detector available - cannot verify, reject all
@@ -1824,6 +1837,7 @@ def main():
         ball_model=args.ball_model,
         use_tracknet=args.use_tracknet,
         tracknet_weights=args.tracknet_weights,
+        skip_ball_verification=args.skip_ball_verification,
         ball_max_height=args.ball_max_height,
         ball_min_size=args.ball_min_size,
         ball_max_size=args.ball_max_size,

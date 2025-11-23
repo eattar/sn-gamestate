@@ -130,12 +130,12 @@ Examples:
                         help='Show all detected actions with nearest player attribution (for verification)')
     parser.add_argument('--use-ground-truth-detections', action='store_true',
                         help='Use player detections directly from ground truth JSON instead of tracker state')
-    parser.add_argument('--ball-confidence', type=float, default=0.2,
-                        help='YOLO confidence threshold for ball detection (default: 0.2)')
-    parser.add_argument('--ball-max-height', type=float, default=0.6,
-                        help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.6, lower=ground)')
-    parser.add_argument('--ball-min-size', type=int, default=15,
-                        help='Minimum ball dimension in pixels (default: 15)')
+    parser.add_argument('--ball-confidence', type=float, default=0.25,
+                        help='YOLO confidence threshold for ball detection (default: 0.25)')
+    parser.add_argument('--ball-max-height', type=float, default=0.55,
+                        help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.55, lower=ground)')
+    parser.add_argument('--ball-min-size', type=int, default=18,
+                        help='Minimum ball dimension in pixels (default: 18)')
     parser.add_argument('--ball-max-size', type=int, default=100,
                         help='Maximum ball dimension in pixels (default: 100)')
     parser.add_argument('--ball-search-window', type=int, default=5,
@@ -504,9 +504,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             window_frames: int = 50, min_confidence: float = 0.7,
                             min_time_between_actions: float = 2.0, fps: float = 25.0,
                             frames_dir: Optional[Path] = None,
-                            ball_confidence: float = 0.2,
-                            ball_max_height: float = 0.6,
-                            ball_min_size: int = 15,
+                            ball_confidence: float = 0.25,
+                            ball_max_height: float = 0.55,
+                            ball_min_size: int = 18,
                             ball_max_size: int = 100,
                             ball_search_window: int = 5,
                             max_ball_distance: int = 150) -> List[Dict]:
@@ -660,7 +660,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             
                             # Soccer-specific Filter 3: Aspect ratio (ball should be roughly circular)
                             aspect_ratio = b_w / b_h if b_h > 0 else 999
-                            if aspect_ratio > 1.4 or aspect_ratio < 0.71:  # Allow slightly more variation
+                            if aspect_ratio > 1.35 or aspect_ratio < 0.74:  # Tighter: shoes are often elongated
                                 filtered_reasons.append(f"aspect={aspect_ratio:.2f}")
                                 continue
                             
@@ -772,14 +772,14 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                                     height_ratio_calc >= (1.0 - ball_max_height) and
                                     b_w >= ball_min_size and b_h >= ball_min_size and
                                     b_w <= ball_max_size and b_h <= ball_max_size and
-                                    aspect_ratio <= 1.4 and aspect_ratio >= 0.71
+                                    aspect_ratio <= 1.35 and aspect_ratio >= 0.74
                                 )
                                 
                                 b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
                                 b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
                                 
-                                # Green for valid, Red for filtered out
-                                color = (0, 255, 0) if passes_filters else (0, 0, 255)
+                                # Blue for valid ball, Red for filtered out
+                                color = (255, 0, 0) if passes_filters else (0, 0, 255)
                                 cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
 
                         # Save the image

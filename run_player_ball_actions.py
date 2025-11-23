@@ -690,6 +690,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
 
             if frame_path:
                 try:
+                    import cv2
                     debug_img = cv2.imread(str(frame_path))
                     if debug_img is not None:
                         # Draw player bbox (green)
@@ -1640,7 +1641,7 @@ def main():
         actions, player_dets,
         window_frames=50,
         min_confidence=0.75,  # Higher threshold to reduce false positives
-        min_time_between_actions=3.0,  # At least 3 seconds between actions
+        min_time_between_actions=1.0,  # At least 1 second between actions
         fps=25.0,
         frames_dir=frames_dir
     )

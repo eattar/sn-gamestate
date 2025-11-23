@@ -132,6 +132,8 @@ Examples:
                         help='Use player detections directly from ground truth JSON instead of tracker state')
     parser.add_argument('--ball-confidence', type=float, default=0.25,
                         help='YOLO confidence threshold for ball detection (default: 0.25)')
+    parser.add_argument('--ball-model', type=str, default='yolov8x.pt',
+                        help='YOLO model to use for ball detection (default: yolov8x.pt, options: yolov8n/s/m/l/x.pt)')
     parser.add_argument('--ball-max-height', type=float, default=0.55,
                         help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.55, lower=ground)')
     parser.add_argument('--ball-min-size', type=int, default=18,
@@ -505,6 +507,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             min_time_between_actions: float = 2.0, fps: float = 25.0,
                             frames_dir: Optional[Path] = None,
                             ball_confidence: float = 0.25,
+                            ball_model: str = 'yolov8x.pt',
                             ball_max_height: float = 0.55,
                             ball_min_size: int = 18,
                             ball_max_size: int = 100,
@@ -1769,6 +1772,7 @@ def main():
         fps=25.0,
         frames_dir=frames_dir,
         ball_confidence=args.ball_confidence,
+        ball_model=args.ball_model,
         ball_max_height=args.ball_max_height,
         ball_min_size=args.ball_min_size,
         ball_max_size=args.ball_max_size,

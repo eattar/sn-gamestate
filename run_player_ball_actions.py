@@ -134,6 +134,10 @@ Examples:
                         help='YOLO confidence threshold for ball detection (default: 0.25)')
     parser.add_argument('--ball-model', type=str, default='yolov8x.pt',
                         help='YOLO model to use for ball detection (default: yolov8x.pt, options: yolov8n/s/m/l/x.pt)')
+    parser.add_argument('--use-tracknet', action='store_true',
+                        help='Use TrackNet for ball detection instead of YOLO (more accurate for soccer balls)')
+    parser.add_argument('--tracknet-weights', type=str, default=None,
+                        help='Path to TrackNet weights file (optional, uses untrained model if not provided)')
     parser.add_argument('--ball-max-height', type=float, default=0.55,
                         help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.55, lower=ground)')
     parser.add_argument('--ball-min-size', type=int, default=18,
@@ -508,6 +512,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             frames_dir: Optional[Path] = None,
                             ball_confidence: float = 0.25,
                             ball_model: str = 'yolov8x.pt',
+                            use_tracknet: bool = False,
+                            tracknet_weights: Optional[str] = None,
                             ball_max_height: float = 0.55,
                             ball_min_size: int = 18,
                             ball_max_size: int = 100,
@@ -567,20 +573,41 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     center_x = frame_width / 2
     center_y = frame_height / 2
     
-    # Initialize Ball Detector (YOLOv8)
+    # Initialize Ball Detector (TrackNet or YOLO)
     print("Initializing Ball Detector for verification...")
-    try:
-        from ultralytics import YOLO
-        # Class 32 is 'sports ball' in COCO dataset
-        # Using 'm' (medium) model for better small object detection
-        ball_detector = YOLO('yolov8m.pt')
-        has_ball_detector = True
-        print("   ✓ Ball detector ready")
-    except Exception as e:
-        print(f"   ⚠️  Could not initialize ball detector: {e}")
-        print("   Actions will be rejected without ball verification.")
-        has_ball_detector = False
-        ball_detector = None
+    has_ball_detector = False
+    ball_detector = None
+    using_tracknet = False
+    
+    if use_tracknet:
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent))
+            from tracknet_detector import TrackNetBallDetector
+            import torch
+            ball_detector = TrackNetBallDetector(
+                model_path=tracknet_weights,
+                device='cuda' if torch.cuda.is_available() else 'cpu',
+                confidence_threshold=ball_confidence
+            )
+            has_ball_detector = True
+            using_tracknet = True
+            print("   ✓ TrackNet ball detector ready")
+        except Exception as e:
+            print(f"   ⚠️  Could not initialize TrackNet: {e}")
+            print("   Falling back to YOLO...")
+    
+    if not using_tracknet:
+        try:
+            from ultralytics import YOLO
+            ball_detector = YOLO(ball_model)
+            has_ball_detector = True
+            print(f"   ✓ YOLO ball detector ready ({ball_model})")
+        except Exception as e:
+            print(f"   ⚠️  Could not initialize ball detector: {e}")
+            print("   Actions will be rejected without ball verification.")
+            has_ball_detector = False
+            ball_detector = None
 
     for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']
@@ -659,16 +686,39 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     except:
                         pass
                     
-                    # Run YOLO detection with lower confidence to catch more candidates
-                    results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
-                    num_detections = len(results[0].boxes) if results and len(results) > 0 and len(results[0].boxes) > 0 else 0
+                    # Run ball detection (TrackNet or YOLO)
+                    ball_detections = []  # List of (x, y, w, h) tuples
                     
-                    print(f"    Frame {frame_to_check}: {num_detections} raw YOLO detections")
+                    if using_tracknet:
+                        # TrackNet detection
+                        result = ball_detector.detect(debug_img if debug_img is not None else cv2.imread(str(frame_path)))
+                        if result is not None:
+                            x, y, conf = result
+                            # Estimate ball size (TrackNet only gives center point)
+                            est_size = 30  # pixels
+                            ball_detections.append((x, y, est_size, est_size, conf))
+                        num_detections = len(ball_detections)
+                        print(f"    Frame {frame_to_check}: {num_detections} TrackNet detections")
+                    else:
+                        # YOLO detection
+                        results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
+                        if results and len(results) > 0 and len(results[0].boxes) > 0:
+                            for b in results[0].boxes:
+                                b_xywh = b.xywh[0].cpu().numpy()
+                                b_conf = float(b.conf[0])
+                                ball_detections.append((
+                                    float(b_xywh[0]), float(b_xywh[1]),
+                                    float(b_xywh[2]), float(b_xywh[3]),
+                                    b_conf
+                                ))
+                        num_detections = len(ball_detections)
+                        print(f"    Frame {frame_to_check}: {num_detections} raw YOLO detections")
                     
                     if num_detections > 0:
                         filtered_reasons = []
                         
-                        for b in results[0].boxes:
+                        for detection in ball_detections:
+                            b_x, b_y, b_w, b_h = detection[0], detection[1], detection[2], detection[3]
                             b_xywh = b.xywh[0].cpu().numpy()
                             b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
                             
@@ -1773,6 +1823,8 @@ def main():
         frames_dir=frames_dir,
         ball_confidence=args.ball_confidence,
         ball_model=args.ball_model,
+        use_tracknet=args.use_tracknet,
+        tracknet_weights=args.tracknet_weights,
         ball_max_height=args.ball_max_height,
         ball_min_size=args.ball_min_size,
         ball_max_size=args.ball_max_size,

@@ -104,8 +104,8 @@ Examples:
                         help='Player jersey number')
     parser.add_argument('--output', type=str,
                         help='Output JSON file (default: player_<jersey>_<team>_actions.json)')
-    parser.add_argument('--state-cache', type=str, required=True,
-                        help='Path to cached tracking state .pklz file (REQUIRED - run tracklab separately first)')
+    parser.add_argument('--state-cache', type=str,
+                        help='Path to cached tracking state .pklz file (required if not using --use-ground-truth-detections)')
     parser.add_argument('--frames-dir', type=str,
                         help='Path to directory with image frames (auto-detected if not provided)')
     parser.add_argument('--experiment', type=str, default='ball_finetune_long_004',
@@ -128,6 +128,8 @@ Examples:
                         help='Analyze per-track jersey stability and majority vote reassignment (diagnostic)')
     parser.add_argument('--show-all-actions', action='store_true',
                         help='Show all detected actions with nearest player attribution (for verification)')
+    parser.add_argument('--use-ground-truth-detections', action='store_true',
+                        help='Use player detections directly from ground truth JSON instead of tracker state')
     
     return parser.parse_args()
 
@@ -1363,6 +1365,65 @@ def analyze_jersey_assignments(detections: pd.DataFrame, ground_truth: Optional[
     # Do not exit; allow pipeline to continue
 
 
+def build_player_detections_from_ground_truth(ground_truth: Dict) -> pd.DataFrame:
+    """
+    Build a detections DataFrame from ground truth annotations.
+
+    This creates a DataFrame compatible with the rest of the pipeline,
+    using the "perfect" detections from the labels file.
+
+    Args:
+        ground_truth: Loaded Labels-GameState.json data.
+
+    Returns:
+        A pandas DataFrame with player detections.
+    """
+    print("\n" + "="*60)
+    print("BUILDING DETECTIONS FROM GROUND TRUTH")
+    print("="*60)
+
+    if not ground_truth or 'annotations' not in ground_truth:
+        print("⚠️  Ground truth data is empty or invalid.")
+        return pd.DataFrame()
+
+    records = []
+    for ann in tqdm(ground_truth['annotations'], desc="Processing GT annotations"):
+        attrs = ann.get('attributes', {})
+        role = attrs.get('role')
+
+        # We only care about players and goalkeepers
+        if role not in ['player', 'goalkeeper']:
+            continue
+
+        team = attrs.get('team')
+        jersey = attrs.get('jersey')
+        image_id = ann.get('image_id')
+
+        # Extract bbox
+        bbox = ann.get('bbox_ltwh') or ann.get('bbox')
+        if bbox is None:
+            bbox_image = ann.get('bbox_image')
+            if bbox_image and all(k in bbox_image for k in ['x', 'y', 'w', 'h']):
+                bbox = [bbox_image['x'], bbox_image['y'], bbox_image['w'], bbox_image['h']]
+
+        if all(v is not None for v in [team, jersey, image_id, bbox]):
+            records.append({
+                'image_id': image_id,
+                'team': team,
+                'jersey_number': int(jersey),
+                'bbox_ltwh': bbox,
+                'track_id': f"gt_{team}_{jersey}" # Create a stable pseudo-track_id
+            })
+
+    if not records:
+        print("⚠️  No valid player annotations found in ground truth.")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+    print(f"✓ Built {len(df)} detections from ground truth for {len(df['track_id'].unique())} unique players.")
+    return df
+
+
 def main():
     """Main execution"""
     args = parse_args()
@@ -1387,19 +1448,31 @@ def main():
         game_name = args.game
         video_path = None
     
-    # Step 1: Load tracking detections from pre-computed state
-    print("\n📂 Loading pre-computed tracking state...")
-    print("   (Run tracklab separately first to generate this file)")
-    
-    if not Path(args.state_cache).exists():
-        print(f"\n❌ ERROR: Tracker state file not found: {args.state_cache}")
-        print("\nTo generate tracker state, run tracklab first:")
-        print(f"  cd /workspace/sn-gamestate")
-        print(f"  uv run tracklab -cn soccernet dataset.eval_set={args.split} dataset.vids_dict.{args.split}=[{game_name}]")
-        print(f"\nThis will create a .pklz file in the outputs directory")
-        sys.exit(1)
-    
-    detections = load_tracking_state(args.state_cache, game_name)
+    # Step 1: Load detections from ground truth or tracker state
+    if args.use_ground_truth_detections:
+        print("\n📋 Loading detections from GROUND TRUTH...")
+        label_source = args.labels_path if args.labels_path else args.data_dir
+        if not game_name:
+            print("\n❌ ERROR: Must specify a game name (e.g., SNGS-001) when using --use-ground-truth-detections.")
+            sys.exit(1)
+        gt_labels = load_ground_truth_labels(game_name, args.split, label_source)
+        if not gt_labels:
+            print("\n❌ ERROR: Could not load ground truth labels. Please check --labels-path or --data-dir.")
+            sys.exit(1)
+        detections = build_player_detections_from_ground_truth(gt_labels)
+
+    else:
+        # Load from tracker state cache
+        print("\n📂 Loading pre-computed tracking state...")
+        print("   (Run tracklab separately first to generate this file)")
+        if not args.state_cache or not Path(args.state_cache).exists():
+            print(f"\n❌ ERROR: Tracker state file not found or not specified: {args.state_cache}")
+            print("\nTo generate tracker state, run tracklab first:")
+            print(f"  cd /path/to/sn-gamestate")
+            print(f"  uv run tracklab -cn soccernet dataset.eval_set={args.split} dataset.vids_dict.{args.split}=[{game_name}]")
+            print(f"\nOr, use the --use-ground-truth-detections flag to bypass the tracker.")
+            sys.exit(1)
+        detections = load_tracking_state(args.state_cache, game_name)
     
     # Run analysis if requested
     if args.analyze_data:
@@ -1409,8 +1482,8 @@ def main():
     
     # Load and validate with ground truth if requested
     validation_report = None
-    if args.validate_detections and game_name:
-        print(f"\n📋 Loading ground truth labels...")
+    if args.validate_detections and game_name and not args.use_ground_truth_detections:
+        print(f"\n📋 Loading ground truth labels for validation...")
         # Prefer explicit labels-path if provided
         label_source = args.labels_path if args.labels_path else args.data_dir
         gt_labels = load_ground_truth_labels(game_name, args.split, label_source)

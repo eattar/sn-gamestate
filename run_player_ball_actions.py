@@ -828,13 +828,16 @@ def validate_detections_with_ground_truth(detections: pd.DataFrame, ground_truth
         print("⚠️  No ground truth available - skipping validation")
         return detections, {}
     
-    # Build lookup: image_id -> list of GT annotations
+    # Build lookup: image_id -> list of GT annotations plus suffix index for fallback
     gt_by_frame = {}
+    gt_by_suffix = {}
     for ann in ground_truth.get('annotations', []):
-        image_id = str(ann['image_id'])
-        if image_id not in gt_by_frame:
-            gt_by_frame[image_id] = []
-        gt_by_frame[image_id].append(ann)
+        image_id = str(ann.get('image_id', ann.get('id', '')))
+        if image_id:
+            gt_by_frame.setdefault(image_id, []).append(ann)
+            # Suffix: last 6 digits often correspond to frame number
+            suffix = image_id[-6:]
+            gt_by_suffix.setdefault(suffix, []).append(ann)
     
     # Determine jersey column
     jersey_col = None
@@ -861,7 +864,11 @@ def validate_detections_with_ground_truth(detections: pd.DataFrame, ground_truth
         image_id = str(det['image_id'])
         
         # Get GT annotations for this frame
+        # Try exact match first, then suffix fallback if no annotations found
         gt_anns = gt_by_frame.get(image_id, [])
+        if not gt_anns:
+            suffix = image_id[-6:]
+            gt_anns = gt_by_suffix.get(suffix, [])
         if not gt_anns:
             continue
         
@@ -874,9 +881,15 @@ def validate_detections_with_ground_truth(detections: pd.DataFrame, ground_truth
         best_match = None
         
         for gt_ann in gt_anns:
-            gt_bbox = gt_ann.get('bbox_ltwh', gt_ann.get('bbox', []))
-            if not gt_bbox:
-                continue
+            # Extract GT bbox in [x, y, w, h] format
+            gt_bbox = gt_ann.get('bbox_ltwh') or gt_ann.get('bbox')
+            if gt_bbox is None or (isinstance(gt_bbox, list) and len(gt_bbox) == 0):
+                # Try bbox_image dict
+                bbox_image = gt_ann.get('bbox_image')
+                if bbox_image and all(k in bbox_image for k in ['x','y','w','h']):
+                    gt_bbox = [bbox_image['x'], bbox_image['y'], bbox_image['w'], bbox_image['h']]
+                else:
+                    continue
             iou = calculate_iou(det_bbox, gt_bbox)
             
             if iou > best_iou:
@@ -931,6 +944,18 @@ def validate_detections_with_ground_truth(detections: pd.DataFrame, ground_truth
     print(f"\n📊 Validation Results:")
     print(f"  Total detections: {len(detections)}")
     print(f"  Matched to GT (IoU≥{iou_threshold}): {matched_count} ({100*matched_count/len(detections):.1f}%)")
+
+    if matched_count == 0:
+        # Provide debug info to help diagnose
+        print("\n🔎 Debug: No matches found. Showing first 3 detection samples and GT availability.")
+        sample_dets = detections.head(3)
+        for i, (_, det_row) in enumerate(sample_dets.iterrows(), 1):
+            did = str(det_row.get('image_id'))
+            suffix = did[-6:] if did else 'N/A'
+            gt_exact = len(gt_by_frame.get(did, []))
+            gt_suffix = len(gt_by_suffix.get(suffix, []))
+            print(f"  Det {i}: image_id={did} suffix={suffix} bbox={det_row.get('bbox_ltwh')} -> GT exact:{gt_exact} GT suffix:{gt_suffix}")
+        print("   Potential causes: differing image_id formats, bbox mismatch, or tracker file not aligned with labels.")
     
     if matched_count > 0:
         print(f"  Correct jersey: {correct_jersey_count} ({100*correct_jersey_count/matched_count:.1f}% of matched)")

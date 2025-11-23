@@ -761,7 +761,7 @@ def load_ground_truth_labels(game_name: str, split: str, data_dir: str) -> Optio
     """
     # Extract game number from game_name (e.g., SNGS-021 -> 021)
     game_num = game_name.split('-')[-1]
-    labels_path = Path(data_dir) / split / game_num / "Labels-GameState.json"
+    labels_path = Path(data_dir) / split / f"SNGS-{game_num}" / "Labels-GameState.json"
     
     if not labels_path.exists():
         print(f"⚠️  Ground truth labels not found: {labels_path}")

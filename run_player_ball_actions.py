@@ -543,15 +543,15 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
     # Initialize Ball Detector (YOLOv8)
     print("Initializing Ball Detector for verification...")
     try:
-        from src.player_tracking.detector import PlayerDetector
+        from ultralytics import YOLO
         # Class 32 is 'sports ball' in COCO dataset
         # Using 'm' (medium) model for better small object detection
-        ball_detector = PlayerDetector(model_name='yolov8m.pt', classes=[32], conf_threshold=0.15, device='cpu')
+        ball_detector = YOLO('yolov8m.pt')
         has_ball_detector = True
         print("   ✓ Ball detector ready")
     except Exception as e:
         print(f"   ⚠️  Could not initialize ball detector: {e}")
-        print("   Continuing with spatial filtering only.")
+        print("   Actions will be rejected without ball verification.")
         has_ball_detector = False
         ball_detector = None
 
@@ -600,8 +600,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     import cv2
                     frame_img = cv2.imread(str(frame_path))
                     if frame_img is not None:
-                        ball_dets = ball_detector.detect(frame_img)
-                        if ball_dets:
+                        # Run YOLO detection for sports ball (class 32)
+                        results = ball_detector(frame_img, classes=[32], conf=0.15, verbose=False)
+                        if results and len(results) > 0 and len(results[0].boxes) > 0:
+                            ball_dets = results[0].boxes
                             ball_detected_in_frame = True
 
             # Evaluate all candidates
@@ -636,7 +638,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     # Find closest ball to this specific candidate
                     min_dist = float('inf')
                     for b in ball_dets:
-                        b_center = b.center
+                        # YOLO boxes have xywh format, extract center
+                        b_xywh = b.xywh[0].cpu().numpy()  # [x_center, y_center, width, height]
+                        b_center = (float(b_xywh[0]), float(b_xywh[1]))
                         d = ((bbox_center[0] - b_center[0])**2 + (bbox_center[1] - b_center[1])**2)**0.5
                         if d < min_dist:
                             min_dist = d
@@ -676,14 +680,16 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 status = "✅ VERIFIED" if ball_dist < 150 else ("❌ TOO FAR" if ball_dist != float('inf') else "⚠️ NO BALL DETECTED")
                 print(f"    - Ball Distance: {ball_dist:.1f} px -> {status}")
             
-            # DECISION LOGIC
+            # DECISION LOGIC: Require ball verification
             is_match = False
             if ball_dist < 150:
                 is_match = True
-            elif ball_dist == float('inf') and best_match['spatial'] > 0.3 and best_match['frame_diff'] <= 5:
-                # Fallback if ball detection failed (or frame mismatch) but player is reasonably central
-                is_match = True
-                print("  -> Accepted by spatial fallback (ball not detected)")
+            elif not has_ball_detector:
+                # No ball detector available - cannot verify, reject all
+                print("  -> Rejected: ball detector unavailable")
+            elif ball_dist == float('inf'):
+                # Ball detector ran but found no ball - likely not a real action
+                print("  -> Rejected: no ball detected in frame")
             
             if is_match:
                 matched_actions.append({

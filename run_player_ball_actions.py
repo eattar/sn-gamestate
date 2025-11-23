@@ -620,7 +620,13 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 
                 # 2. Temporal Score
                 frame_diff = abs(row['frame_num'] - action_frame)
-                temporal_score = 1.0 - (frame_diff / 10.0).clip(0, 1)
+                # Clamp ratio to [0,1] without relying on numpy clip on scalar
+                temp_ratio = frame_diff / 10.0
+                if temp_ratio < 0:
+                    temp_ratio = 0.0
+                elif temp_ratio > 1:
+                    temp_ratio = 1.0
+                temporal_score = 1.0 - temp_ratio
                 
                 # 3. Ball Proximity Score (Only if frame matches exactly or very close)
                 ball_dist = float('inf')

@@ -130,6 +130,18 @@ Examples:
                         help='Show all detected actions with nearest player attribution (for verification)')
     parser.add_argument('--use-ground-truth-detections', action='store_true',
                         help='Use player detections directly from ground truth JSON instead of tracker state')
+    parser.add_argument('--ball-confidence', type=float, default=0.25,
+                        help='YOLO confidence threshold for ball detection (default: 0.25)')
+    parser.add_argument('--ball-max-height', type=float, default=0.65,
+                        help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.65, lower=ground)')
+    parser.add_argument('--ball-min-size', type=int, default=15,
+                        help='Minimum ball dimension in pixels (default: 15)')
+    parser.add_argument('--ball-max-size', type=int, default=100,
+                        help='Maximum ball dimension in pixels (default: 100)')
+    parser.add_argument('--ball-search-window', type=int, default=5,
+                        help='Number of frames to search around action (default: 5, ±5 frames)')
+    parser.add_argument('--max-ball-distance', type=int, default=150,
+                        help='Maximum distance in pixels between player and ball (default: 150)')
     
     return parser.parse_args()
 
@@ -491,7 +503,13 @@ def run_ball_action_detection(video_path: str, experiment: str, fold: int, devic
 def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame, 
                             window_frames: int = 50, min_confidence: float = 0.7,
                             min_time_between_actions: float = 2.0, fps: float = 25.0,
-                            frames_dir: Optional[Path] = None) -> List[Dict]:
+                            frames_dir: Optional[Path] = None,
+                            ball_confidence: float = 0.25,
+                            ball_max_height: float = 0.65,
+                            ball_min_size: int = 15,
+                            ball_max_size: int = 100,
+                            ball_search_window: int = 5,
+                            max_ball_distance: int = 150) -> List[Dict]:
     """
     Match detected actions to player using temporal proximity and spatial overlap
     
@@ -586,10 +604,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             
             # New logic: Search for ball in a window around the action
             best_ball_info = {'dist': float('inf'), 'frame': None}
-            ball_search_window = range(action_frame - 5, action_frame + 6)
+            search_range = range(action_frame - ball_search_window, action_frame + ball_search_window + 1)
 
             if has_ball_detector and frames_dir and frames_dir.exists():
-                for frame_to_check in ball_search_window:
+                for frame_to_check in search_range:
                     # Find player's detection at this specific frame
                     player_at_frame = nearby_dets[nearby_dets['frame_num'] == frame_to_check]
                     if player_at_frame.empty:
@@ -613,12 +631,31 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     if not frame_path:
                         continue
 
-                    # Run YOLO detection
-                    results = ball_detector(str(frame_path), classes=[32], conf=0.15, verbose=False)
+                    # Run YOLO detection with lower confidence to catch more candidates
+                    results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
                     if results and len(results) > 0 and len(results[0].boxes) > 0:
                         for b in results[0].boxes:
                             b_xywh = b.xywh[0].cpu().numpy()
-                            b_center = (float(b_xywh[0]), float(b_xywh[1]))
+                            b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
+                            
+                            # Soccer-specific Filter 1: Height constraint (ball is usually on ground)
+                            # Normalize Y coordinate to 0-1 range (0=top, 1=bottom)
+                            height_ratio = b_y / frame_height
+                            if height_ratio < (1.0 - ball_max_height):  # Ball too high in frame
+                                continue
+                            
+                            # Soccer-specific Filter 2: Size constraints (consistent ball size)
+                            if b_w < ball_min_size or b_h < ball_min_size:
+                                continue  # Too small
+                            if b_w > ball_max_size or b_h > ball_max_size:
+                                continue  # Too large (likely not a ball)
+                            
+                            # Soccer-specific Filter 3: Aspect ratio (ball should be roughly circular)
+                            aspect_ratio = b_w / b_h if b_h > 0 else 999
+                            if aspect_ratio > 1.5 or aspect_ratio < 0.67:  # Not circular enough
+                                continue
+                            
+                            b_center = (b_x, b_y)
                             d = ((player_center[0] - b_center[0])**2 + (player_center[1] - b_center[1])**2)**0.5
                             if d < best_ball_info['dist']:
                                 best_ball_info['dist'] = d
@@ -649,7 +686,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 
                 # 3. Ball Proximity Score (use the best distance found in the window)
                 ball_score = 0.0
-                if best_ball_info['dist'] < 150:
+                if best_ball_info['dist'] < max_ball_distance:
                     # Apply bonus if a close ball was found anywhere in the window
                     ball_score = 2.0
                 
@@ -718,13 +755,13 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     print(f"    - ⚠️  Failed to save debug image: {e}")
             
             if has_ball_detector:
-                status = "✅ VERIFIED" if ball_dist < 150 else ("❌ TOO FAR" if ball_dist != float('inf') else "⚠️ NO BALL DETECTED")
+                status = "✅ VERIFIED" if ball_dist < max_ball_distance else ("❌ TOO FAR" if ball_dist != float('inf') else "⚠️ NO BALL DETECTED")
                 ball_frame_info = f" at frame {best_ball_info['frame']}" if best_ball_info['frame'] is not None else ""
                 print(f"    - Ball Distance: {ball_dist:.1f} px{ball_frame_info} -> {status}")
             
             # DECISION LOGIC: Require ball verification
             is_match = False
-            if ball_dist < 150:
+            if ball_dist < max_ball_distance:
                 is_match = True
             elif not has_ball_detector:
                 # No ball detector available - cannot verify, reject all
@@ -1643,7 +1680,13 @@ def main():
         min_confidence=0.75,  # Higher threshold to reduce false positives
         min_time_between_actions=1.0,  # At least 1 second between actions
         fps=25.0,
-        frames_dir=frames_dir
+        frames_dir=frames_dir,
+        ball_confidence=args.ball_confidence,
+        ball_max_height=args.ball_max_height,
+        ball_min_size=args.ball_min_size,
+        ball_max_size=args.ball_max_size,
+        ball_search_window=args.ball_search_window,
+        max_ball_distance=args.max_ball_distance
     )
     
     # Step 5: Create output

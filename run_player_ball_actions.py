@@ -122,6 +122,8 @@ Examples:
                         help='Validate tracking detections against ground truth labels')
     parser.add_argument('--data-dir', type=str, default='/netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS',
                         help='Root directory of SoccerNetGS dataset (default: /netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS)')
+    parser.add_argument('--labels-path', type=str,
+                        help='Direct path to Labels-GameState.json (overrides data-dir + split + game logic)')
     
     return parser.parse_args()
 
@@ -759,9 +761,18 @@ def load_ground_truth_labels(game_name: str, split: str, data_dir: str) -> Optio
     Returns:
         Dictionary with ground truth annotations, or None if not found
     """
-    # Extract game number from game_name (e.g., SNGS-021 -> 021)
-    game_num = game_name.split('-')[-1]
-    labels_path = Path(data_dir) / split / f"SNGS-{game_num}" / "Labels-GameState.json"
+    # Flexible resolution:
+    # 1. If data_dir is actually a file pointing to Labels-GameState.json -> use directly
+    # 2. If data_dir points to a directory that already contains Labels-GameState.json -> use it
+    # 3. Otherwise construct path from root: <data_dir>/<split>/SNGS-<num>/Labels-GameState.json
+    data_path = Path(data_dir)
+    if data_path.is_file() and data_path.name == 'Labels-GameState.json':
+        labels_path = data_path
+    elif (data_path / 'Labels-GameState.json').exists():
+        labels_path = data_path / 'Labels-GameState.json'
+    else:
+        game_num = game_name.split('-')[-1]
+        labels_path = data_path / split / f"SNGS-{game_num}" / "Labels-GameState.json"
     
     if not labels_path.exists():
         print(f"⚠️  Ground truth labels not found: {labels_path}")
@@ -1150,7 +1161,9 @@ def main():
     validation_report = None
     if args.validate_detections and game_name:
         print(f"\n📋 Loading ground truth labels...")
-        gt_labels = load_ground_truth_labels(game_name, args.split, args.data_dir)
+        # Prefer explicit labels-path if provided
+        label_source = args.labels_path if args.labels_path else args.data_dir
+        gt_labels = load_ground_truth_labels(game_name, args.split, label_source)
         
         if gt_labels:
             # Validate all detections

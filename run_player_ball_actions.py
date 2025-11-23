@@ -1,9 +1,4 @@
-python run_player_ball_actions.py \
-  --game SNGS-025 \
-  --split valid \
-  --team right \
-  --jersey 11 \
-  --state-cache /path/to/your/gamestate.pklz#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Ball Action Spotting Integration with SN-GameState
 ===================================================

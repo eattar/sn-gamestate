@@ -124,6 +124,8 @@ Examples:
                         help='Root directory of SoccerNetGS dataset (default: /netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS)')
     parser.add_argument('--labels-path', type=str,
                         help='Direct path to Labels-GameState.json (overrides data-dir + split + game logic)')
+    parser.add_argument('--analyze-jerseys', action='store_true',
+                        help='Analyze per-track jersey stability and majority vote reassignment (diagnostic)')
     
     return parser.parse_args()
 
@@ -1127,6 +1129,99 @@ def analyze_tracking_data(detections: pd.DataFrame):
     sys.exit(0)
 
 
+def analyze_jersey_assignments(detections: pd.DataFrame, ground_truth: Optional[Dict] = None):
+    """Analyze per-track jersey assignment stability and optionally compare to ground truth.
+
+    Prints summary:
+      - track_id, total frames, distinct jersey_number values, majority jersey, majority fraction
+      - jersey_number_confidence stats if available
+      - mismatch with ground truth (if validated columns present)
+    """
+    print("\n" + "="*60)
+    print("🧪 JERSEY ASSIGNMENT ANALYSIS")
+    print("="*60)
+
+    jersey_col = None
+    for col in ['jersey_number', 'jn_tracklet', 'jersey', 'jn']:
+        if col in detections.columns:
+            jersey_col = col
+            break
+    if jersey_col is None:
+        print("No jersey column found; aborting jersey analysis.")
+        return
+
+    if 'track_id' not in detections.columns:
+        print("No track_id column; cannot group by tracks.")
+        return
+
+    df = detections.copy()
+    df[jersey_col] = pd.to_numeric(df[jersey_col], errors='coerce')
+
+    groups = []
+    for tid, g in df.groupby('track_id'):
+        jerseys = g[jersey_col].dropna().astype(int)
+        total = len(g)
+        distinct = sorted(jerseys.unique().tolist()) if len(jerseys) else []
+        majority_jersey = None
+        majority_frac = 0.0
+        if len(jerseys):
+            vc = jerseys.value_counts()
+            majority_jersey = int(vc.index[0])
+            majority_frac = vc.iloc[0] / len(jerseys)
+        conf_stats = None
+        if 'jersey_number_confidence' in g.columns:
+            conf_vals = pd.to_numeric(g['jersey_number_confidence'], errors='coerce').dropna()
+            if len(conf_vals):
+                conf_stats = {
+                    'mean_conf': float(conf_vals.mean()),
+                    'min_conf': float(conf_vals.min()),
+                    'max_conf': float(conf_vals.max())
+                }
+        groups.append({
+            'track_id': tid,
+            'frames': total,
+            'distinct_jerseys': distinct,
+            'majority_jersey': majority_jersey,
+            'majority_frac': majority_frac,
+            'conf_stats': conf_stats
+        })
+
+    # Sort tracks by majority stability descending
+    groups.sort(key=lambda x: x['majority_frac'], reverse=True)
+
+    print(f"Total tracks: {len(groups)}")
+    print("\nTrack Summary (top 15):")
+    for row in groups[:15]:
+        conf_str = ''
+        if row['conf_stats']:
+            conf_str = f" | conf mean={row['conf_stats']['mean_conf']:.2f}"
+        print(f"  Track {row['track_id']}: frames={row['frames']}, jerseys={row['distinct_jerseys']}, majority={row['majority_jersey']} ({row['majority_frac']*100:.1f}%){conf_str}")
+
+    unstable = [r for r in groups if r['majority_frac'] < 0.6 and len(r['distinct_jerseys']) > 1]
+    if unstable:
+        print(f"\n⚠️  Unstable jersey assignments (majority <60% & >1 distinct): {len(unstable)}")
+        for r in unstable[:10]:
+            print(f"  Track {r['track_id']}: jerseys={r['distinct_jerseys']} majority={r['majority_jersey']} ({r['majority_frac']*100:.1f}%)")
+    else:
+        print("\n✓ All tracks have stable jersey assignment (>=60% majority or single value).")
+
+    # Ground truth comparison if validated detections present
+    if 'gt_matched' in df.columns and 'gt_correct_jersey' in df.columns:
+        print("\nGround Truth Comparison:")
+        for r in groups[:15]:
+            track_rows = df[df['track_id'] == r['track_id']]
+            gt_rows = track_rows[track_rows['gt_matched']]
+            if len(gt_rows):
+                correct = gt_rows[gt_rows['gt_correct_jersey']]
+                rate = len(correct)/len(gt_rows) if len(gt_rows) else 0
+                print(f"  Track {r['track_id']}: GT matched={len(gt_rows)} jersey_accuracy={rate*100:.1f}%")
+
+    print("\nSuggestion: consider majority-vote reassignment for unstable tracks before filtering.")
+
+    print("\n" + "="*60)
+    # Do not exit; allow pipeline to continue
+
+
 def main():
     """Main execution"""
     args = parse_args()
@@ -1168,6 +1263,8 @@ def main():
     # Run analysis if requested
     if args.analyze_data:
         analyze_tracking_data(detections)
+    if args.analyze_jerseys:
+        analyze_jersey_assignments(detections)
     
     # Load and validate with ground truth if requested
     validation_report = None

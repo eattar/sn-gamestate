@@ -608,17 +608,26 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
 
             if has_ball_detector and frames_dir and frames_dir.exists():
                 for frame_to_check in search_range:
-                    # Find player's detection at this specific frame
+                    # Find player's detection at this specific frame (if available)
                     player_at_frame = nearby_dets[nearby_dets['frame_num'] == frame_to_check]
-                    if player_at_frame.empty:
-                        continue
                     
-                    player_bbox_ltwh = player_at_frame.iloc[0]['bbox_ltwh']
-                    if pd.isna(player_bbox_ltwh).any():
-                        continue
+                    # Use player bbox if available, otherwise use a reference bbox from nearby frames
+                    player_bbox_ltwh = None
+                    player_center = None
                     
-                    player_center = (player_bbox_ltwh[0] + player_bbox_ltwh[2] / 2, 
-                                     player_bbox_ltwh[1] + player_bbox_ltwh[3] / 2)
+                    if not player_at_frame.empty:
+                        player_bbox_ltwh = player_at_frame.iloc[0]['bbox_ltwh']
+                        if not pd.isna(player_bbox_ltwh).any():
+                            player_center = (player_bbox_ltwh[0] + player_bbox_ltwh[2] / 2, 
+                                           player_bbox_ltwh[1] + player_bbox_ltwh[3] / 2)
+                    
+                    # If player not in this frame, use the closest detection as reference
+                    if player_center is None:
+                        closest_player = nearby_dets.iloc[0] if len(nearby_dets) > 0 else None
+                        if closest_player is not None and not pd.isna(closest_player['bbox_ltwh']).any():
+                            player_bbox_ltwh = closest_player['bbox_ltwh']
+                            player_center = (player_bbox_ltwh[0] + player_bbox_ltwh[2] / 2, 
+                                           player_bbox_ltwh[1] + player_bbox_ltwh[3] / 2)
 
                     # Find and check the image file for this frame
                     frame_path_candidates = [
@@ -631,27 +640,30 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     if not frame_path:
                         continue
 
-                    # Run YOLO detection with lower confidence to catch more candidates
-                    results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
-                    if results and len(results) > 0 and len(results[0].boxes) > 0:
-                        num_detections = len(results[0].boxes)
-                        filtered_reasons = []
-                        print(f"    Frame {frame_to_check}: {num_detections} raw YOLO detections")
-                        
-                        # Prepare debug image for this frame
-                        debug_img = None
-                        img_height = frame_height  # Default
-                        try:
-                            import cv2
-                            debug_img = cv2.imread(str(frame_path))
-                            if debug_img is not None:
-                                img_height = debug_img.shape[0]
-                                # Draw player bbox (green)
+                    # Prepare debug image for this frame
+                    debug_img = None
+                    img_height = frame_height  # Default
+                    try:
+                        import cv2
+                        debug_img = cv2.imread(str(frame_path))
+                        if debug_img is not None:
+                            img_height = debug_img.shape[0]
+                            # Draw player bbox (green) if available
+                            if player_bbox_ltwh is not None:
                                 p_x1, p_y1 = int(player_bbox_ltwh[0]), int(player_bbox_ltwh[1])
                                 p_x2, p_y2 = int(player_bbox_ltwh[0] + player_bbox_ltwh[2]), int(player_bbox_ltwh[1] + player_bbox_ltwh[3])
                                 cv2.rectangle(debug_img, (p_x1, p_y1), (p_x2, p_y2), (0, 255, 0), 2)
-                        except:
-                            pass
+                    except:
+                        pass
+                    
+                    # Run YOLO detection with lower confidence to catch more candidates
+                    results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
+                    num_detections = len(results[0].boxes) if results and len(results) > 0 and len(results[0].boxes) > 0 else 0
+                    
+                    print(f"    Frame {frame_to_check}: {num_detections} raw YOLO detections")
+                    
+                    if num_detections > 0:
+                        filtered_reasons = []
                         
                         for b in results[0].boxes:
                             b_xywh = b.xywh[0].cpu().numpy()
@@ -695,18 +707,19 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                                 color = (255, 0, 0) if passes_filters else (0, 0, 255)
                                 cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
                             
-                            if d < best_ball_info['dist']:
+                            if player_center is not None and d < best_ball_info['dist']:
                                 best_ball_info['dist'] = d
                                 best_ball_info['frame'] = frame_to_check
-                        
-                        # Save debug image for this frame
-                        if debug_img is not None:
-                            try:
-                                img_filename = f"frame_{action_frame}_{action['action']}_search_f{frame_to_check}.jpg"
-                                cv2.imwrite(img_filename, debug_img)
+                    
+                    # Save debug image for this frame (even if no balls detected)
+                    if debug_img is not None:
+                        try:
+                            img_filename = f"frame_{action_frame}_{action['action']}_search_f{frame_to_check}.jpg"
+                            cv2.imwrite(img_filename, debug_img)
+                            if num_detections > 0:
                                 print(f"      Saved: {img_filename}")
-                            except:
-                                pass
+                        except:
+                            pass
                         
                         # Log filtering results for this frame
                         if frame_to_check == action_frame and num_detections > 0:

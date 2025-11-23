@@ -1143,6 +1143,7 @@ def show_all_actions_with_players(actions: List[Dict], detections: pd.DataFrame,
     print("🎯 ALL DETECTED ACTIONS WITH PLAYER ATTRIBUTION")
     print("="*70)
     print(f"Total actions: {len(actions)}\n")
+    sys.stdout.flush()  # Force output to display
     
     # Prepare detections
     dets_work = detections.copy()
@@ -1261,10 +1262,12 @@ def show_all_actions_with_players(actions: List[Dict], detections: pd.DataFrame,
             extra = ball_info if j == 1 else ""
             print(f"     {j}. Team {c['team']}, Jersey {jersey_str} {track_str} | "
                   f"Δframe={c['frame_diff']}, spatial_dist={c['spatial_dist']:.0f}px{extra}")
+        sys.stdout.flush()  # Force output
     
     print("\n" + "="*70)
     print("💡 Use this output to manually verify actions in the video.")
     print("="*70 + "\n")
+    sys.stdout.flush()
 
 
 def analyze_jersey_assignments(detections: pd.DataFrame, ground_truth: Optional[Dict] = None):

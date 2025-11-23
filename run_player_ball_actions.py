@@ -719,8 +719,6 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         
                         for detection in ball_detections:
                             b_x, b_y, b_w, b_h = detection[0], detection[1], detection[2], detection[3]
-                            b_xywh = b.xywh[0].cpu().numpy()
-                            b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
                             
                             # Soccer-specific Filter 1: Height constraint (ball is usually on ground)
                             # Normalize Y coordinate to 0-1 range (0=top, 1=bottom)

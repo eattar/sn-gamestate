@@ -677,8 +677,13 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             closest_det = best_match['det']
             ball_dist = best_match['ball_dist']
 
-            # Save debug image if ball was detected
-            if ball_detected_in_frame and frame_path:
+            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}):")
+            print(f"  Selected candidate from {len(candidates)} options:")
+            print(f"    - Frame diff: {best_match['frame_diff']}")
+            print(f"    - Spatial score: {best_match['spatial']:.3f}")
+
+            # Save debug image for every analyzed action
+            if frame_path:
                 try:
                     debug_img = cv2.imread(str(frame_path))
                     if debug_img is not None:
@@ -688,13 +693,14 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         p_x2, p_y2 = int(p_bbox[0] + p_bbox[2]), int(p_bbox[1] + p_bbox[3])
                         cv2.rectangle(debug_img, (p_x1, p_y1), (p_x2, p_y2), (0, 255, 0), 2)
                         
-                        # Draw ball bboxes (red)
-                        for b in ball_dets:
-                            b_xywh = b.xywh[0].cpu().numpy()
-                            b_x, b_y, b_w, b_h = b_xywh
-                            b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
-                            b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
-                            cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), (0, 0, 255), 2)
+                        # Draw ball bboxes (red), if any were detected
+                        if ball_detected_in_frame:
+                            for b in ball_dets:
+                                b_xywh = b.xywh[0].cpu().numpy()
+                                b_x, b_y, b_w, b_h = b_xywh
+                                b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
+                                b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
+                                cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), (0, 0, 255), 2)
 
                         # Save the image
                         img_filename = f"frame_{action_frame}_{action['action']}_ball_detection.jpg"
@@ -703,11 +709,6 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
 
                 except Exception as e:
                     print(f"    - ⚠️  Failed to save debug image: {e}")
-            
-            print(f"\nAction at frame {action_frame} ({action['action']}, conf={action['confidence']:.3f}):")
-            print(f"  Selected candidate from {len(candidates)} options:")
-            print(f"    - Frame diff: {best_match['frame_diff']}")
-            print(f"    - Spatial score: {best_match['spatial']:.3f}")
             
             if has_ball_detector:
                 status = "✅ VERIFIED" if ball_dist < 150 else ("❌ TOO FAR" if ball_dist != float('inf') else "⚠️ NO BALL DETECTED")

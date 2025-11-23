@@ -584,41 +584,52 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             # We do this BEFORE picking the best candidate, so we can use ball proximity
             # to resolve duplicates (e.g. if there are 3 players with Jersey 11, pick the one with the ball)
             
-            ball_dets = []
-            ball_detected_in_frame = False
-            
-            if has_ball_detector and frames_dir and frames_dir.exists():
-                # Try to find the image file for the ACTION frame
-                candidates = [
-                    frames_dir / f"{action_frame:06d}.jpg",
-                    frames_dir / f"{action_frame:06d}.png",
-                    frames_dir / f"{action_frame}.jpg",
-                    frames_dir / f"img1/{action_frame:06d}.jpg"
-                ]
-                
-                frame_path = None
-                for c in candidates:
-                    if c.exists():
-                        frame_path = c
-                        break
-                
-                if frame_path:
-                    import cv2
-                    frame_img = cv2.imread(str(frame_path))
-                    if frame_img is not None:
-                        # Run YOLO detection for sports ball (class 32)
-                        results = ball_detector(frame_img, classes=[32], conf=0.15, verbose=False)
-                        if results and len(results) > 0 and len(results[0].boxes) > 0:
-                            ball_dets = results[0].boxes
-                            ball_detected_in_frame = True
+            # New logic: Search for ball in a window around the action
+            best_ball_info = {'dist': float('inf'), 'frame': None}
+            ball_search_window = range(action_frame - 5, action_frame + 6)
 
+            if has_ball_detector and frames_dir and frames_dir.exists():
+                for frame_to_check in ball_search_window:
+                    # Find player's detection at this specific frame
+                    player_at_frame = nearby_dets[nearby_dets['frame_num'] == frame_to_check]
+                    if player_at_frame.empty:
+                        continue
+                    
+                    player_bbox_ltwh = player_at_frame.iloc[0]['bbox_ltwh']
+                    if pd.isna(player_bbox_ltwh).any():
+                        continue
+                    
+                    player_center = (player_bbox_ltwh[0] + player_bbox_ltwh[2] / 2, 
+                                     player_bbox_ltwh[1] + player_bbox_ltwh[3] / 2)
+
+                    # Find and check the image file for this frame
+                    frame_path_candidates = [
+                        frames_dir / f"{frame_to_check:06d}.jpg",
+                        frames_dir / f"{frame_to_check:06d}.png",
+                        frames_dir / f"img1/{frame_to_check:06d}.jpg"
+                    ]
+                    frame_path = next((c for c in frame_path_candidates if c.exists()), None)
+
+                    if not frame_path:
+                        continue
+
+                    # Run YOLO detection
+                    results = ball_detector(str(frame_path), classes=[32], conf=0.15, verbose=False)
+                    if results and len(results) > 0 and len(results[0].boxes) > 0:
+                        for b in results[0].boxes:
+                            b_xywh = b.xywh[0].cpu().numpy()
+                            b_center = (float(b_xywh[0]), float(b_xywh[1]))
+                            d = ((player_center[0] - b_center[0])**2 + (player_center[1] - b_center[1])**2)**0.5
+                            if d < best_ball_info['dist']:
+                                best_ball_info['dist'] = d
+                                best_ball_info['frame'] = frame_to_check
+            
             # Evaluate all candidates
             candidates = []
             for idx, row in nearby_dets.iterrows():
                 # 1. Spatial Score
                 if pd.isna(row['bbox_ltwh']).any():
                     spatial_score = 0.0
-                    bbox_center = None
                 else:
                     left, top, width, height = row['bbox_ltwh']
                     bbox_center = (left + width / 2, top + height / 2)
@@ -636,25 +647,11 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     temp_ratio = 1.0
                 temporal_score = 1.0 - temp_ratio
                 
-                # 3. Ball Proximity Score (Only if frame matches exactly or very close)
-                ball_dist = float('inf')
+                # 3. Ball Proximity Score (use the best distance found in the window)
                 ball_score = 0.0
-                
-                if ball_detected_in_frame and frame_diff <= 1 and bbox_center:
-                    # Find closest ball to this specific candidate
-                    min_dist = float('inf')
-                    for b in ball_dets:
-                        # YOLO boxes have xywh format, extract center
-                        b_xywh = b.xywh[0].cpu().numpy()  # [x_center, y_center, width, height]
-                        b_center = (float(b_xywh[0]), float(b_xywh[1]))
-                        d = ((bbox_center[0] - b_center[0])**2 + (bbox_center[1] - b_center[1])**2)**0.5
-                        if d < min_dist:
-                            min_dist = d
-                    
-                    ball_dist = min_dist
-                    if ball_dist < 150:
-                        # Huge boost if ball is verified near this candidate
-                        ball_score = 2.0
+                if best_ball_info['dist'] < 150:
+                    # Apply bonus if a close ball was found anywhere in the window
+                    ball_score = 2.0
                 
                 # Combined Score
                 # Base: 60% spatial, 40% temporal
@@ -665,7 +662,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     'det': row,
                     'score': final_score,
                     'spatial': spatial_score,
-                    'ball_dist': ball_dist,
+                    'ball_dist': best_ball_info['dist'], # Report the best distance
                     'frame_diff': frame_diff
                 })
             
@@ -683,6 +680,14 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
             print(f"    - Spatial score: {best_match['spatial']:.3f}")
 
             # Save debug image for every analyzed action
+            # Use the frame where the ball was closest, or the action frame if no ball was found
+            debug_frame_num = best_ball_info['frame'] if best_ball_info['frame'] is not None else action_frame
+            debug_frame_path_candidates = [
+                frames_dir / f"{debug_frame_num:06d}.jpg",
+                frames_dir / f"img1/{debug_frame_num:06d}.jpg"
+            ]
+            frame_path = next((c for c in debug_frame_path_candidates if c.exists()), None)
+
             if frame_path:
                 try:
                     debug_img = cv2.imread(str(frame_path))
@@ -693,9 +698,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         p_x2, p_y2 = int(p_bbox[0] + p_bbox[2]), int(p_bbox[1] + p_bbox[3])
                         cv2.rectangle(debug_img, (p_x1, p_y1), (p_x2, p_y2), (0, 255, 0), 2)
                         
-                        # Draw ball bboxes (red), if any were detected
-                        if ball_detected_in_frame:
-                            for b in ball_dets:
+                        # Re-run ball detection on this specific frame for visualization
+                        final_results = ball_detector(str(frame_path), classes=[32], conf=0.15, verbose=False)
+                        if final_results and len(final_results) > 0 and len(final_results[0].boxes) > 0:
+                            for b in final_results[0].boxes:
                                 b_xywh = b.xywh[0].cpu().numpy()
                                 b_x, b_y, b_w, b_h = b_xywh
                                 b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
@@ -705,14 +711,15 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         # Save the image
                         img_filename = f"frame_{action_frame}_{action['action']}_ball_detection.jpg"
                         cv2.imwrite(img_filename, debug_img)
-                        print(f"    - Saved debug image: {img_filename}")
+                        print(f"    - Saved debug image: {img_filename} (visualizing frame {debug_frame_num})")
 
                 except Exception as e:
                     print(f"    - ⚠️  Failed to save debug image: {e}")
             
             if has_ball_detector:
                 status = "✅ VERIFIED" if ball_dist < 150 else ("❌ TOO FAR" if ball_dist != float('inf') else "⚠️ NO BALL DETECTED")
-                print(f"    - Ball Distance: {ball_dist:.1f} px -> {status}")
+                ball_frame_info = f" at frame {best_ball_info['frame']}" if best_ball_info['frame'] is not None else ""
+                print(f"    - Ball Distance: {ball_dist:.1f} px{ball_frame_info} -> {status}")
             
             # DECISION LOGIC: Require ball verification
             is_match = False
@@ -723,7 +730,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 print("  -> Rejected: ball detector unavailable")
             elif ball_dist == float('inf'):
                 # Ball detector ran but found no ball - likely not a real action
-                print("  -> Rejected: no ball detected in frame")
+                print("  -> Rejected: no ball detected in window")
             
             if is_match:
                 matched_actions.append({

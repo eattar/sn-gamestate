@@ -636,8 +636,22 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     if results and len(results) > 0 and len(results[0].boxes) > 0:
                         num_detections = len(results[0].boxes)
                         filtered_reasons = []
-                        if frame_to_check == action_frame:
-                            print(f"    Frame {frame_to_check}: {num_detections} raw YOLO detections")
+                        print(f"    Frame {frame_to_check}: {num_detections} raw YOLO detections")
+                        
+                        # Prepare debug image for this frame
+                        debug_img = None
+                        img_height = frame_height  # Default
+                        try:
+                            import cv2
+                            debug_img = cv2.imread(str(frame_path))
+                            if debug_img is not None:
+                                img_height = debug_img.shape[0]
+                                # Draw player bbox (green)
+                                p_x1, p_y1 = int(player_bbox_ltwh[0]), int(player_bbox_ltwh[1])
+                                p_x2, p_y2 = int(player_bbox_ltwh[0] + player_bbox_ltwh[2]), int(player_bbox_ltwh[1] + player_bbox_ltwh[3])
+                                cv2.rectangle(debug_img, (p_x1, p_y1), (p_x2, p_y2), (0, 255, 0), 2)
+                        except:
+                            pass
                         
                         for b in results[0].boxes:
                             b_xywh = b.xywh[0].cpu().numpy()
@@ -645,7 +659,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             
                             # Soccer-specific Filter 1: Height constraint (ball is usually on ground)
                             # Normalize Y coordinate to 0-1 range (0=top, 1=bottom)
-                            height_ratio = b_y / frame_height
+                            height_ratio = b_y / img_height
                             if height_ratio < (1.0 - ball_max_height):  # Ball too high in frame
                                 filtered_reasons.append(f"height={height_ratio:.2f}")
                                 continue
@@ -666,9 +680,33 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             
                             b_center = (b_x, b_y)
                             d = ((player_center[0] - b_center[0])**2 + (player_center[1] - b_center[1])**2)**0.5
+                            
+                            # Draw ball bbox on debug image if available
+                            if debug_img is not None:
+                                passes_filters = (
+                                    height_ratio >= (1.0 - ball_max_height) and
+                                    b_w >= ball_min_size and b_h >= ball_min_size and
+                                    b_w <= ball_max_size and b_h <= ball_max_size and
+                                    aspect_ratio <= 1.35 and aspect_ratio >= 0.74
+                                )
+                                b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
+                                b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
+                                # Blue for valid ball, Red for filtered out
+                                color = (255, 0, 0) if passes_filters else (0, 0, 255)
+                                cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
+                            
                             if d < best_ball_info['dist']:
                                 best_ball_info['dist'] = d
                                 best_ball_info['frame'] = frame_to_check
+                        
+                        # Save debug image for this frame
+                        if debug_img is not None:
+                            try:
+                                img_filename = f"frame_{action_frame}_{action['action']}_search_f{frame_to_check}.jpg"
+                                cv2.imwrite(img_filename, debug_img)
+                                print(f"      Saved: {img_filename}")
+                            except:
+                                pass
                         
                         # Log filtering results for this frame
                         if frame_to_check == action_frame and num_detections > 0:

@@ -857,32 +857,33 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         p_x2, p_y2 = int(p_bbox[0] + p_bbox[2]), int(p_bbox[1] + p_bbox[3])
                         cv2.rectangle(debug_img, (p_x1, p_y1), (p_x2, p_y2), (0, 255, 0), 2)
                         
-                        # Re-run ball detection on this specific frame for visualization
-                        final_results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
-                        if final_results and len(final_results) > 0 and len(final_results[0].boxes) > 0:
-                            for b in final_results[0].boxes:
-                                b_xywh = b.xywh[0].cpu().numpy()
-                                b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
-                                
-                                # Apply same filters to determine color
-                                height_ratio = b_y / frame_height
-                                aspect_ratio = b_w / b_h if b_h > 0 else 999
-                                
-                                # Check if detection passes all filters
-                                height_ratio_calc = b_y / img_height
-                                passes_filters = (
-                                    height_ratio_calc >= (1.0 - ball_max_height) and
-                                    b_w >= ball_min_size and b_h >= ball_min_size and
-                                    b_w <= ball_max_size and b_h <= ball_max_size and
-                                    aspect_ratio <= 1.35 and aspect_ratio >= 0.74
-                                )
-                                
-                                b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
-                                b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
-                                
-                                # Blue for valid ball, Red for filtered out
-                                color = (255, 0, 0) if passes_filters else (0, 0, 255)
-                                cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
+                        # Re-run ball detection on this specific frame for visualization (YOLO only)
+                        if not using_tracknet:
+                            final_results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
+                            if final_results and len(final_results) > 0 and len(final_results[0].boxes) > 0:
+                                for b in final_results[0].boxes:
+                                    b_xywh = b.xywh[0].cpu().numpy()
+                                    b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
+                                    
+                                    # Apply same filters to determine color
+                                    height_ratio = b_y / frame_height
+                                    aspect_ratio = b_w / b_h if b_h > 0 else 999
+                                    
+                                    # Check if detection passes all filters
+                                    height_ratio_calc = b_y / img_height
+                                    passes_filters = (
+                                        height_ratio_calc >= (1.0 - ball_max_height) and
+                                        b_w >= ball_min_size and b_h >= ball_min_size and
+                                        b_w <= ball_max_size and b_h <= ball_max_size and
+                                        aspect_ratio <= 1.35 and aspect_ratio >= 0.74
+                                    )
+                                    
+                                    b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
+                                    b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
+                                    
+                                    # Blue for valid ball, Red for filtered out
+                                    color = (255, 0, 0) if passes_filters else (0, 0, 255)
+                                    cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
 
                         # Save the image
                         img_filename = f"frame_{action_frame}_{action['action']}_ball_detection.jpg"

@@ -130,14 +130,14 @@ Examples:
                         help='Show all detected actions with nearest player attribution (for verification)')
     parser.add_argument('--use-ground-truth-detections', action='store_true',
                         help='Use player detections directly from ground truth JSON instead of tracker state')
-    parser.add_argument('--ball-confidence', type=float, default=0.25,
-                        help='YOLO confidence threshold for ball detection (default: 0.25)')
-    parser.add_argument('--ball-max-height', type=float, default=0.65,
-                        help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.65, lower=ground)')
-    parser.add_argument('--ball-min-size', type=int, default=15,
-                        help='Minimum ball dimension in pixels (default: 15)')
-    parser.add_argument('--ball-max-size', type=int, default=100,
-                        help='Maximum ball dimension in pixels (default: 100)')
+    parser.add_argument('--ball-confidence', type=float, default=0.3,
+                        help='YOLO confidence threshold for ball detection (default: 0.3)')
+    parser.add_argument('--ball-max-height', type=float, default=0.5,
+                        help='Maximum height ratio in frame (0-1) where ball can be detected (default: 0.5, lower=ground)')
+    parser.add_argument('--ball-min-size', type=int, default=20,
+                        help='Minimum ball dimension in pixels (default: 20)')
+    parser.add_argument('--ball-max-size', type=int, default=80,
+                        help='Maximum ball dimension in pixels (default: 80)')
     parser.add_argument('--ball-search-window', type=int, default=5,
                         help='Number of frames to search around action (default: 5, ±5 frames)')
     parser.add_argument('--max-ball-distance', type=int, default=150,
@@ -504,10 +504,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             window_frames: int = 50, min_confidence: float = 0.7,
                             min_time_between_actions: float = 2.0, fps: float = 25.0,
                             frames_dir: Optional[Path] = None,
-                            ball_confidence: float = 0.25,
-                            ball_max_height: float = 0.65,
-                            ball_min_size: int = 15,
-                            ball_max_size: int = 100,
+                            ball_confidence: float = 0.3,
+                            ball_max_height: float = 0.5,
+                            ball_min_size: int = 20,
+                            ball_max_size: int = 80,
                             ball_search_window: int = 5,
                             max_ball_distance: int = 150) -> List[Dict]:
     """
@@ -652,7 +652,7 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             
                             # Soccer-specific Filter 3: Aspect ratio (ball should be roughly circular)
                             aspect_ratio = b_w / b_h if b_h > 0 else 999
-                            if aspect_ratio > 1.5 or aspect_ratio < 0.67:  # Not circular enough
+                            if aspect_ratio > 1.3 or aspect_ratio < 0.77:  # Stricter: must be nearly circular
                                 continue
                             
                             b_center = (b_x, b_y)

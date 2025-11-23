@@ -1,4 +1,9 @@
-#!/usr/bin/env python3
+python run_player_ball_actions.py \
+  --game SNGS-025 \
+  --split valid \
+  --team right \
+  --jersey 11 \
+  --state-cache /path/to/your/gamestate.pklz#!/usr/bin/env python3
 """
 Ball Action Spotting Integration with SN-GameState
 ===================================================
@@ -118,6 +123,10 @@ Examples:
                         help='Save the converted video to this path (optional)')
     parser.add_argument('--analyze-data', action='store_true',
                         help='Run data quality analysis on tracking state and exit')
+    parser.add_argument('--validate-detections', action='store_true',
+                        help='Validate tracking detections against ground truth labels')
+    parser.add_argument('--data-dir', type=str, default='/netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS',
+                        help='Root directory of SoccerNetGS dataset (default: /netscratch/eattar/ds/SoccerNet/2024/data/SoccerNetGS)')
     
     return parser.parse_args()
 
@@ -321,14 +330,29 @@ def filter_player_by_jersey(detections: pd.DataFrame, team: str, jersey: int) ->
     
     if len(player_dets) == 0:
         print(f"\n❌ ERROR: No player found with team='{team}' and jersey={jersey}")
-        print("\nAvailable combinations:")
+        print("\nAvailable combinations (from tracking detections):")
         
         if 'team' in detections.columns and jersey_col and jersey_col in detections.columns:
             team_jersey = detections[['team', jersey_col]].dropna().drop_duplicates()
             # Sort by team then jersey
             team_jersey = team_jersey.sort_values(['team', jersey_col])
             for _, row in team_jersey.iterrows():
-                print(f"  - Team: {row['team']}, Jersey: {int(row[jersey_col])}")
+                # Check if this detection was validated
+                is_validated = ''
+                if 'gt_matched' in detections.columns:
+                    validated_combo = detections[
+                        (detections['team'] == row['team']) & 
+                        (detections[jersey_col] == row[jersey_col]) &
+                        (detections['gt_matched'] == True) &
+                        (detections['gt_correct_jersey'] == True) &
+                        (detections['gt_correct_team'] == True)
+                    ]
+                    if len(validated_combo) > 0:
+                        is_validated = ' ✓ (verified by ground truth)'
+                    else:
+                        is_validated = ' ⚠️  (not verified - may be tracker error)'
+                
+                print(f"  - Team: {row['team']}, Jersey: {int(row[jersey_col])}{is_validated}")
         
         sys.exit(1)
     
@@ -728,6 +752,252 @@ def create_output_json(matched_actions: List[Dict], team: str, jersey: int,
     return output
 
 
+def load_ground_truth_labels(game_name: str, split: str, data_dir: str) -> Optional[Dict]:
+    """
+    Load ground truth labels from Labels-GameState.json
+    
+    Args:
+        game_name: Game ID (e.g., "SNGS-021")
+        split: Dataset split (train/valid/test/challenge)
+        data_dir: Root directory of SoccerNetGS dataset
+        
+    Returns:
+        Dictionary with ground truth annotations, or None if not found
+    """
+    # Extract game number from game_name (e.g., SNGS-021 -> 021)
+    game_num = game_name.split('-')[-1]
+    labels_path = Path(data_dir) / split / game_num / "Labels-GameState.json"
+    
+    if not labels_path.exists():
+        print(f"⚠️  Ground truth labels not found: {labels_path}")
+        return None
+    
+    with open(labels_path, 'r') as f:
+        labels = json.load(f)
+    
+    print(f"✓ Loaded {len(labels.get('annotations', []))} ground truth annotations")
+    return labels
+
+
+def calculate_iou(bbox1, bbox2) -> float:
+    """
+    Calculate Intersection over Union between two bounding boxes
+    
+    Args:
+        bbox1, bbox2: [left, top, width, height]
+        
+    Returns:
+        IoU score (0.0 to 1.0)
+    """
+    x1, y1, w1, h1 = bbox1
+    x2, y2, w2, h2 = bbox2
+    
+    # Calculate intersection
+    x_left = max(x1, x2)
+    y_top = max(y1, y2)
+    x_right = min(x1 + w1, x2 + w2)
+    y_bottom = min(y1 + h1, y2 + h2)
+    
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+    
+    intersection = (x_right - x_left) * (y_bottom - y_top)
+    
+    # Calculate union
+    area1 = w1 * h1
+    area2 = w2 * h2
+    union = area1 + area2 - intersection
+    
+    return intersection / union if union > 0 else 0.0
+
+
+def validate_detections_with_ground_truth(detections: pd.DataFrame, ground_truth: Dict,
+                                         game_name: str, iou_threshold: float = 0.5) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Validate tracking detections against ground truth labels
+    
+    Args:
+        detections: Tracking detections DataFrame
+        ground_truth: Ground truth labels dictionary
+        game_name: Game ID for reporting
+        iou_threshold: Minimum IoU to consider a match (default: 0.5)
+        
+    Returns:
+        Tuple of (validated_detections_df, validation_report_dict)
+    """
+    print("\n" + "="*60)
+    print("🔍 VALIDATING DETECTIONS WITH GROUND TRUTH")
+    print("="*60)
+    
+    if ground_truth is None:
+        print("⚠️  No ground truth available - skipping validation")
+        return detections, {}
+    
+    # Build lookup: image_id -> list of GT annotations
+    gt_by_frame = {}
+    for ann in ground_truth.get('annotations', []):
+        image_id = str(ann['image_id'])
+        if image_id not in gt_by_frame:
+            gt_by_frame[image_id] = []
+        gt_by_frame[image_id].append(ann)
+    
+    # Determine jersey column
+    jersey_col = None
+    for col in ['jersey_number', 'jn_tracklet', 'jersey', 'jn']:
+        if col in detections.columns:
+            jersey_col = col
+            break
+    
+    # Validate each detection
+    detections = detections.copy()
+    detections['gt_matched'] = False
+    detections['gt_correct_jersey'] = False
+    detections['gt_correct_team'] = False
+    detections['gt_iou'] = 0.0
+    
+    matched_count = 0
+    correct_jersey_count = 0
+    correct_team_count = 0
+    fully_correct_count = 0
+    
+    validation_details = []
+    
+    for idx, det in tqdm(detections.iterrows(), total=len(detections), desc="Validating detections"):
+        image_id = str(det['image_id'])
+        
+        # Get GT annotations for this frame
+        gt_anns = gt_by_frame.get(image_id, [])
+        if not gt_anns:
+            continue
+        
+        det_bbox = det['bbox_ltwh']
+        if pd.isna(det_bbox).any():
+            continue
+        
+        # Find best matching GT annotation
+        best_iou = 0.0
+        best_match = None
+        
+        for gt_ann in gt_anns:
+            gt_bbox = gt_ann.get('bbox_ltwh', gt_ann.get('bbox', []))
+            if not gt_bbox:
+                continue
+            iou = calculate_iou(det_bbox, gt_bbox)
+            
+            if iou > best_iou:
+                best_iou = iou
+                best_match = gt_ann
+        
+        # Check if match is good enough
+        if best_iou >= iou_threshold and best_match:
+            detections.at[idx, 'gt_matched'] = True
+            detections.at[idx, 'gt_iou'] = best_iou
+            matched_count += 1
+            
+            jersey_correct = False
+            team_correct = False
+            
+            # Check jersey number
+            if jersey_col:
+                det_jersey = det[jersey_col]
+                gt_jersey = best_match.get('attributes', {}).get('jersey')
+                if pd.notna(det_jersey) and gt_jersey is not None:
+                    if int(det_jersey) == int(gt_jersey):
+                        detections.at[idx, 'gt_correct_jersey'] = True
+                        correct_jersey_count += 1
+                        jersey_correct = True
+            
+            # Check team
+            det_team = det.get('team')
+            gt_team = best_match.get('attributes', {}).get('team')
+            if det_team and gt_team and str(det_team) == str(gt_team):
+                detections.at[idx, 'gt_correct_team'] = True
+                correct_team_count += 1
+                team_correct = True
+            
+            # Track fully correct detections
+            if jersey_correct and team_correct:
+                fully_correct_count += 1
+            
+            # Log validation details
+            validation_details.append({
+                'frame': image_id,
+                'detection_team': str(det_team),
+                'detection_jersey': int(det_jersey) if pd.notna(det_jersey) else None,
+                'gt_team': gt_team,
+                'gt_jersey': gt_jersey,
+                'iou': float(best_iou),
+                'jersey_correct': jersey_correct,
+                'team_correct': team_correct,
+                'fully_correct': jersey_correct and team_correct
+            })
+    
+    # Print validation statistics
+    print(f"\n📊 Validation Results:")
+    print(f"  Total detections: {len(detections)}")
+    print(f"  Matched to GT (IoU≥{iou_threshold}): {matched_count} ({100*matched_count/len(detections):.1f}%)")
+    
+    if matched_count > 0:
+        print(f"  Correct jersey: {correct_jersey_count} ({100*correct_jersey_count/matched_count:.1f}% of matched)")
+        print(f"  Correct team: {correct_team_count} ({100*correct_team_count/matched_count:.1f}% of matched)")
+        print(f"  Fully correct (jersey + team): {fully_correct_count} ({100*fully_correct_count/matched_count:.1f}% of matched)")
+    
+    # Analyze errors
+    matched_dets = detections[detections['gt_matched']]
+    if len(matched_dets) > 0:
+        wrong_jersey = matched_dets[~matched_dets['gt_correct_jersey']]
+        wrong_team = matched_dets[~matched_dets['gt_correct_team']]
+        
+        print(f"\n⚠️  Detection Errors:")
+        print(f"  Wrong jersey number: {len(wrong_jersey)} ({100*len(wrong_jersey)/len(matched_dets):.1f}%)")
+        print(f"  Wrong team: {len(wrong_team)} ({100*len(wrong_team)/len(matched_dets):.1f}%)")
+    
+    # Create validation report
+    validation_report = {
+        'game': game_name,
+        'total_detections': len(detections),
+        'matched_detections': matched_count,
+        'match_rate': matched_count / len(detections) if len(detections) > 0 else 0.0,
+        'correct_jersey_count': correct_jersey_count,
+        'correct_team_count': correct_team_count,
+        'fully_correct_count': fully_correct_count,
+        'jersey_accuracy': correct_jersey_count / matched_count if matched_count > 0 else 0.0,
+        'team_accuracy': correct_team_count / matched_count if matched_count > 0 else 0.0,
+        'full_accuracy': fully_correct_count / matched_count if matched_count > 0 else 0.0,
+        'iou_threshold': iou_threshold,
+        'validation_details': validation_details[:100]  # Limit to first 100 for file size
+    }
+    
+    return detections, validation_report
+
+
+def get_ground_truth_player_combinations(ground_truth: Dict) -> List[Tuple[str, int]]:
+    """
+    Extract unique (team, jersey) combinations from ground truth
+    
+    Args:
+        ground_truth: Ground truth labels dictionary
+        
+    Returns:
+        List of (team, jersey) tuples that exist in ground truth
+    """
+    if ground_truth is None:
+        return []
+    
+    combinations = set()
+    for ann in ground_truth.get('annotations', []):
+        attrs = ann.get('attributes', {})
+        team = attrs.get('team')
+        jersey = attrs.get('jersey')
+        role = attrs.get('role')
+        
+        # Only include players/goalkeepers with valid team and jersey
+        if role in ['player', 'goalkeeper'] and team and jersey is not None:
+            combinations.add((str(team), int(jersey)))
+    
+    return sorted(list(combinations))
+
+
 def analyze_tracking_data(detections: pd.DataFrame):
     """
     Analyze tracking data quality to identify issues like duplicate jerseys
@@ -855,6 +1125,57 @@ def main():
     # Run analysis if requested
     if args.analyze_data:
         analyze_tracking_data(detections)
+    
+    # Load and validate with ground truth if requested
+    validation_report = None
+    if args.validate_detections and game_name:
+        print(f"\n📋 Loading ground truth labels...")
+        gt_labels = load_ground_truth_labels(game_name, args.split, args.data_dir)
+        
+        if gt_labels:
+            # Validate all detections
+            detections, validation_report = validate_detections_with_ground_truth(
+                detections, gt_labels, game_name, iou_threshold=0.5
+            )
+            
+            # Get ground truth player combinations
+            gt_combinations = get_ground_truth_player_combinations(gt_labels)
+            print(f"\n✅ Ground Truth Player Combinations ({len(gt_combinations)}):")
+            for team, jersey in gt_combinations:
+                # Check if this player exists in validated detections
+                jersey_col = None
+                for col in ['jersey_number', 'jn_tracklet', 'jersey', 'jn']:
+                    if col in detections.columns:
+                        jersey_col = col
+                        break
+                
+                if jersey_col:
+                    validated_dets = detections[
+                        (detections['team'] == team) &
+                        (detections[jersey_col] == jersey) &
+                        (detections['gt_matched'] == True) &
+                        (detections['gt_correct_jersey'] == True) &
+                        (detections['gt_correct_team'] == True)
+                    ]
+                    
+                    status = f"✓ {len(validated_dets)} correct detections" if len(validated_dets) > 0 else "⚠️  Not detected by tracker"
+                    print(f"  - Team: {team}, Jersey: {jersey} - {status}")
+            
+            # Filter to only fully correct detections
+            before_count = len(detections)
+            detections = detections[
+                (detections['gt_matched'] == True) &
+                (detections['gt_correct_jersey'] == True) &
+                (detections['gt_correct_team'] == True)
+            ]
+            print(f"\n🔧 Filtered to only ground-truth validated detections: {len(detections)}/{before_count}")
+            print(f"   Removed {before_count - len(detections)} incorrect/unmatched detections")
+            
+            # Save validation report
+            report_file = f"validation_report_{game_name}.json"
+            with open(report_file, 'w') as f:
+                json.dump(validation_report, f, indent=2)
+            print(f"\n💾 Validation report saved to: {report_file}")
     
     # Get frames directory
     if args.frames_dir:

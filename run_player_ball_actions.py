@@ -150,6 +150,12 @@ Examples:
                         help='Number of frames to search around action (default: 5, ±5 frames)')
     parser.add_argument('--max-ball-distance', type=int, default=150,
                         help='Maximum distance in pixels between player and ball (default: 150)')
+    parser.add_argument('--filter-dark-colors', action='store_true',
+                        help='Filter out dark-colored detections (shoes, dark objects) using HSV color analysis')
+    parser.add_argument('--min-brightness', type=int, default=60,
+                        help='Minimum brightness (V in HSV) for ball detection (0-255, default: 60)')
+    parser.add_argument('--min-saturation', type=int, default=30,
+                        help='Minimum saturation (S in HSV) for colored balls (0-255, default: 30, lower allows white balls)')
     
     return parser.parse_args()
 
@@ -521,7 +527,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             ball_min_size: int = 18,
                             ball_max_size: int = 100,
                             ball_search_window: int = 5,
-                            max_ball_distance: int = 150) -> List[Dict]:
+                            max_ball_distance: int = 150,
+                            filter_dark_colors: bool = False,
+                            min_brightness: int = 60,
+                            min_saturation: int = 30) -> List[Dict]:
     """
     Match detected actions to player using temporal proximity and spatial overlap
     
@@ -750,21 +759,44 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                                 filtered_reasons.append(f"aspect={aspect_ratio:.2f}")
                                 continue
                             
+                            # Soccer-specific Filter 4: Color filter (exclude dark objects like shoes)
+                            if filter_dark_colors and debug_img is not None:
+                                # Extract ball region from image
+                                b_x1, b_y1 = max(0, int(b_x - b_w/2)), max(0, int(b_y - b_h/2))
+                                b_x2, b_y2 = min(debug_img.shape[1], int(b_x + b_w/2)), min(debug_img.shape[0], int(b_y + b_h/2))
+                                
+                                if b_x2 > b_x1 and b_y2 > b_y1:
+                                    ball_region = debug_img[b_y1:b_y2, b_x1:b_x2]
+                                    if ball_region.size > 0:
+                                        # Convert to HSV for better color analysis
+                                        hsv_region = cv2.cvtColor(ball_region, cv2.COLOR_BGR2HSV)
+                                        
+                                        # Calculate mean brightness (V) and saturation (S)
+                                        mean_brightness = hsv_region[:, :, 2].mean()
+                                        mean_saturation = hsv_region[:, :, 1].mean()
+                                        
+                                        # Filter out dark objects (shoes are typically black/brown with low brightness)
+                                        if mean_brightness < min_brightness:
+                                            filtered_reasons.append(f"dark=V{mean_brightness:.0f}")
+                                            continue
+                                        
+                                        # Optional: very desaturated + dark = likely shoe/dark object
+                                        # But allow white balls (low saturation + high brightness)
+                                        if mean_saturation < min_saturation and mean_brightness < 150:
+                                            filtered_reasons.append(f"gray=S{mean_saturation:.0f}_V{mean_brightness:.0f}")
+                                            continue
+                            
                             b_center = (b_x, b_y)
                             d = ((player_center[0] - b_center[0])**2 + (player_center[1] - b_center[1])**2)**0.5
                             
                             # Draw ball bbox on debug image if available
                             if debug_img is not None:
-                                passes_filters = (
-                                    height_ratio >= (1.0 - ball_max_height) and
-                                    b_w >= ball_min_size and b_h >= ball_min_size and
-                                    b_w <= ball_max_size and b_h <= ball_max_size and
-                                    aspect_ratio <= 1.35 and aspect_ratio >= 0.74
-                                )
+                                # This detection passed all filters (since we're here)
+                                passes_filters = True
                                 b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
                                 b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
-                                # Blue for valid ball, Red for filtered out
-                                color = (255, 0, 0) if passes_filters else (0, 0, 255)
+                                # Blue for valid ball (passed all filters including color)
+                                color = (255, 0, 0)
                                 cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
                             
                             if player_center is not None and d < best_ball_info['dist']:
@@ -1842,7 +1874,10 @@ def main():
         ball_min_size=args.ball_min_size,
         ball_max_size=args.ball_max_size,
         ball_search_window=args.ball_search_window,
-        max_ball_distance=args.max_ball_distance
+        max_ball_distance=args.max_ball_distance,
+        filter_dark_colors=args.filter_dark_colors,
+        min_brightness=args.min_brightness,
+        min_saturation=args.min_saturation
     )
     
     # Step 5: Create output

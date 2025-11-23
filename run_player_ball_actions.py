@@ -1679,7 +1679,7 @@ def main():
     if matched_actions:
         print(f"\n  Sample Actions:")
         for action in matched_actions[:5]:
-            print(f"    - {action['time']} | {action['action']} (confidence: {action['confidence']:.3f})")
+            print(f"    - {action['time']} (frame {action['frame']}) | {action['action']} (confidence: {action['confidence']:.3f})")
         
         if len(matched_actions) > 5:
             print(f"    ... and {len(matched_actions) - 5} more")

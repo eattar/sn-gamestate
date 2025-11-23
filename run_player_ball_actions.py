@@ -634,6 +634,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     # Run YOLO detection with lower confidence to catch more candidates
                     results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
                     if results and len(results) > 0 and len(results[0].boxes) > 0:
+                        num_detections = len(results[0].boxes)
+                        filtered_reasons = []
+                        
                         for b in results[0].boxes:
                             b_xywh = b.xywh[0].cpu().numpy()
                             b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
@@ -642,17 +645,21 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             # Normalize Y coordinate to 0-1 range (0=top, 1=bottom)
                             height_ratio = b_y / frame_height
                             if height_ratio < (1.0 - ball_max_height):  # Ball too high in frame
+                                filtered_reasons.append(f"height={height_ratio:.2f}")
                                 continue
                             
                             # Soccer-specific Filter 2: Size constraints (consistent ball size)
                             if b_w < ball_min_size or b_h < ball_min_size:
+                                filtered_reasons.append(f"too_small={min(b_w,b_h):.0f}px")
                                 continue  # Too small
                             if b_w > ball_max_size or b_h > ball_max_size:
+                                filtered_reasons.append(f"too_large={max(b_w,b_h):.0f}px")
                                 continue  # Too large (likely not a ball)
                             
                             # Soccer-specific Filter 3: Aspect ratio (ball should be roughly circular)
                             aspect_ratio = b_w / b_h if b_h > 0 else 999
                             if aspect_ratio > 1.3 or aspect_ratio < 0.77:  # Stricter: must be nearly circular
+                                filtered_reasons.append(f"aspect={aspect_ratio:.2f}")
                                 continue
                             
                             b_center = (b_x, b_y)
@@ -660,6 +667,14 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             if d < best_ball_info['dist']:
                                 best_ball_info['dist'] = d
                                 best_ball_info['frame'] = frame_to_check
+                        
+                        # Log filtering results for this frame
+                        if frame_to_check == action_frame and num_detections > 0:
+                            passed = num_detections - len(filtered_reasons)
+                            if passed == 0:
+                                print(f"    Frame {frame_to_check}: {num_detections} detections, all filtered: {', '.join(filtered_reasons[:3])}")
+                            else:
+                                print(f"    Frame {frame_to_check}: {num_detections} detections, {passed} passed filters")
             
             # Evaluate all candidates
             candidates = []
@@ -730,6 +745,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                     import cv2
                     debug_img = cv2.imread(str(frame_path))
                     if debug_img is not None:
+                        # Get frame dimensions for filtering
+                        img_height = debug_img.shape[0]
                         # Draw player bbox (green)
                         p_bbox = closest_det['bbox_ltwh']
                         p_x1, p_y1 = int(p_bbox[0]), int(p_bbox[1])
@@ -737,14 +754,31 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         cv2.rectangle(debug_img, (p_x1, p_y1), (p_x2, p_y2), (0, 255, 0), 2)
                         
                         # Re-run ball detection on this specific frame for visualization
-                        final_results = ball_detector(str(frame_path), classes=[32], conf=0.15, verbose=False)
+                        final_results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
                         if final_results and len(final_results) > 0 and len(final_results[0].boxes) > 0:
                             for b in final_results[0].boxes:
                                 b_xywh = b.xywh[0].cpu().numpy()
-                                b_x, b_y, b_w, b_h = b_xywh
+                                b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
+                                
+                                # Apply same filters to determine color
+                                height_ratio = b_y / frame_height
+                                aspect_ratio = b_w / b_h if b_h > 0 else 999
+                                
+                                # Check if detection passes all filters
+                                height_ratio_calc = b_y / img_height
+                                passes_filters = (
+                                    height_ratio_calc >= (1.0 - ball_max_height) and
+                                    b_w >= ball_min_size and b_h >= ball_min_size and
+                                    b_w <= ball_max_size and b_h <= ball_max_size and
+                                    aspect_ratio <= 1.3 and aspect_ratio >= 0.77
+                                )
+                                
                                 b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
                                 b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
-                                cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), (0, 0, 255), 2)
+                                
+                                # Green for valid, Red for filtered out
+                                color = (0, 255, 0) if passes_filters else (0, 0, 255)
+                                cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
 
                         # Save the image
                         img_filename = f"frame_{action_frame}_{action['action']}_ball_detection.jpg"

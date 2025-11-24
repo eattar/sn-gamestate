@@ -211,8 +211,8 @@ def main():
             'train': 'train/images',
             'val': 'valid/images' if (dataset_dir / "valid").exists() else 'val/images',
             'test': 'test/images' if (dataset_dir / "test" / "images").exists() else None,
-            'names': {0: 'ball'},
-            'nc': 1
+            'names': {0: 'ball', 1: 'person'},
+            'nc': 2
         }
         
         # Remove None test path

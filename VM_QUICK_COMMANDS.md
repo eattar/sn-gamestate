@@ -11,16 +11,20 @@ git checkout ball-action-integration
 git pull origin ball-action-integration
 ```
 
-### 2. Download Dataset (10 minutes, 2.5 GB)
+### 2. Verify Dataset (2 minutes)
 ```bash
-cd ~/sn-gamestate
-wget https://zenodo.org/record/7808511/files/YOLO.zip
-unzip YOLO.zip
-rm YOLO.zip  # Optional: free up 2.5 GB
+# Dataset should already exist at netscratch location
+ls /netscratch/eattar/ds/YOLO
+
+# If missing, download it:
+# cd /netscratch/eattar/ds
+# wget https://zenodo.org/record/7808511/files/YOLO.zip
+# unzip YOLO.zip
+# rm YOLO.zip
 
 # Create config file
-cat > YOLO/dataset.yaml << 'EOF'
-path: /home/eattar/sn-gamestate/YOLO
+cat > /netscratch/eattar/ds/YOLO/dataset.yaml << 'EOF'
+path: /netscratch/eattar/ds/YOLO
 train: train/images
 val: valid/images
 test: test/images
@@ -34,17 +38,17 @@ EOF
 cd ~/sn-gamestate
 
 # Option A: Run in foreground (stay logged in)
-python finetune_yolo.py --dataset-yaml YOLO/dataset.yaml
+python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
 
 # Option B: Run in background (can disconnect)
-nohup python finetune_yolo.py --dataset-yaml YOLO/dataset.yaml > training.log 2>&1 &
+nohup python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml > training.log 2>&1 &
 tail -f training.log  # Monitor progress
 ```
 
 ### 4. Test When Complete
 ```bash
 # Quick test
-python -c "from ultralytics import YOLO; YOLO('runs/train/soccer_ball_soccernet_v3/weights/best.pt').val(data='YOLO/dataset.yaml')"
+python -c "from ultralytics import YOLO; YOLO('runs/train/soccer_ball_soccernet_v3/weights/best.pt').val(data='/netscratch/eattar/ds/YOLO/dataset.yaml')"
 
 # Real-world test
 python run_player_ball_actions.py \
@@ -86,12 +90,12 @@ cat runs/train/soccer_ball_soccernet_v3/results.csv
 
 **Out of Memory?**
 ```bash
-python finetune_yolo.py --dataset-yaml YOLO/dataset.yaml --batch 4
+python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml --batch 4
 ```
 
 **Training Interrupted?**
 ```bash
-python finetune_yolo.py --dataset-yaml YOLO/dataset.yaml --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
+python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
 ```
 
 ---

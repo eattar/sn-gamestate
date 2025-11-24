@@ -35,13 +35,17 @@ ls -la finetune_yolo.py
 
 ---
 
-## Step 2: Download SoccerNet v3 H250 Dataset
+## Step 2: Verify/Download SoccerNet v3 H250 Dataset
 
-The dataset is **2.5 GB** and contains 14,368 training + 2,726 validation + 2,692 test images with ball annotations.
+**Note**: The dataset should already be at `/netscratch/eattar/ds/YOLO` (2.5 GB).
 
 ```bash
-# Navigate to project directory
-cd ~/sn-gamestate
+# Check if dataset already exists
+ls -la /netscratch/eattar/ds/YOLO
+
+# If it exists, skip to Step 3
+# If not, download it:
+cd /netscratch/eattar/ds
 
 # Download dataset (2.5 GB, takes ~5-10 minutes)
 wget https://zenodo.org/record/7808511/files/YOLO.zip
@@ -92,13 +96,13 @@ rm YOLO.zip
 ## Step 3: Create Dataset Configuration
 
 ```bash
-# Create dataset.yaml file
-cat > YOLO/dataset.yaml << 'EOF'
+# Create dataset.yaml file (in the YOLO directory on netscratch)
+cat > /netscratch/eattar/ds/YOLO/dataset.yaml << 'EOF'
 # SoccerNet v3 H250 Dataset Configuration
 # Long-shot broadcast footage with ball annotations
 # Person height <= 250px filter applied
 
-path: /home/eattar/sn-gamestate/YOLO
+path: /netscratch/eattar/ds/YOLO
 train: train/images
 val: valid/images
 test: test/images
@@ -109,7 +113,7 @@ names: ['ball', 'person']
 EOF
 
 # Verify the file
-cat YOLO/dataset.yaml
+cat /netscratch/eattar/ds/YOLO/dataset.yaml
 ```
 
 ---
@@ -157,9 +161,9 @@ python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 ```bash
 cd ~/sn-gamestate
 
-# Start training with optimized configuration
+# Start training with optimized configuration (dataset on netscratch)
 python finetune_yolo.py \
-  --dataset-yaml YOLO/dataset.yaml \
+  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
   --base-model yolov8n.pt \
   --epochs 100 \
   --imgsz 1280 \
@@ -173,7 +177,7 @@ python finetune_yolo.py \
 ```bash
 # Run in background with nohup
 nohup python finetune_yolo.py \
-  --dataset-yaml YOLO/dataset.yaml \
+  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
   --base-model yolov8n.pt \
   --epochs 100 \
   --imgsz 1280 \
@@ -190,7 +194,7 @@ tail -f training.log
 
 # Or use screen/tmux
 screen -S yolo_training
-python finetune_yolo.py --dataset-yaml YOLO/dataset.yaml ...
+python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml ...
 # Detach: Ctrl+A, D
 # Reattach: screen -r yolo_training
 ```
@@ -408,27 +412,27 @@ After fine-tuning:
 
 ```bash
 # Reduce batch size manually (instead of -1 auto)
-python finetune_yolo.py --batch 4 --dataset-yaml YOLO/dataset.yaml
+python finetune_yolo.py --batch 4 --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
 ```
 
 ### Dataset Not Found
 
 ```bash
 # Verify paths in dataset.yaml
-cat YOLO/dataset.yaml
+cat /netscratch/eattar/ds/YOLO/dataset.yaml
 
 # Update path to absolute path if needed
-path: /home/eattar/sn-gamestate/YOLO
+path: /netscratch/eattar/ds/YOLO
 ```
 
 ### CUDA Out of Memory
 
 ```bash
 # Use smaller image size (less accurate but works)
-python finetune_yolo.py --imgsz 640 --dataset-yaml YOLO/dataset.yaml
+python finetune_yolo.py --imgsz 640 --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
 
 # Or use CPU (very slow, not recommended)
-python finetune_yolo.py --device cpu --dataset-yaml YOLO/dataset.yaml
+python finetune_yolo.py --device cpu --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
 ```
 
 ### Training Stuck/Slow
@@ -441,7 +445,7 @@ nvidia-smi
 fuser -v /dev/nvidia*
 
 # Reduce workers if I/O is bottleneck
-python finetune_yolo.py --workers 4 --dataset-yaml YOLO/dataset.yaml
+python finetune_yolo.py --workers 4 --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
 ```
 
 ### Resume Training After Interruption
@@ -449,7 +453,7 @@ python finetune_yolo.py --workers 4 --dataset-yaml YOLO/dataset.yaml
 ```bash
 # Resume from last checkpoint
 python finetune_yolo.py \
-  --dataset-yaml YOLO/dataset.yaml \
+  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
   --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
 ```
 
@@ -476,14 +480,14 @@ scp -r eattar@134.96.204.42:~/sn-gamestate/runs/train/soccer_ball_soccernet_v3/ 
 wget https://zenodo.org/record/7808511/files/YOLO.zip && unzip YOLO.zip
 
 # Start training
-python finetune_yolo.py --dataset-yaml YOLO/dataset.yaml
+python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
 
 # Monitor
 tail -f training.log
 watch -n 1 nvidia-smi
 
 # Test
-python -c "from ultralytics import YOLO; YOLO('runs/train/soccer_ball_soccernet_v3/weights/best.pt').val(data='YOLO/dataset.yaml')"
+python -c "from ultralytics import YOLO; YOLO('runs/train/soccer_ball_soccernet_v3/weights/best.pt').val(data='/netscratch/eattar/ds/YOLO/dataset.yaml')"
 
 # Use in production
 python run_player_ball_actions.py --ball-model runs/train/soccer_ball_soccernet_v3/weights/best.pt ...
@@ -497,7 +501,7 @@ python run_player_ball_actions.py --ball-model runs/train/soccer_ball_soccernet_
 - [ ] Pull latest code (`git pull origin ball-action-integration`)
 - [ ] Download SoccerNet v3 H250 dataset (2.5 GB)
 - [ ] Extract and verify dataset structure
-- [ ] Create `YOLO/dataset.yaml` configuration
+- [ ] Create `/netscratch/eattar/ds/YOLO/dataset.yaml` configuration
 - [ ] Activate Python environment
 - [ ] Start training (`python finetune_yolo.py ...`)
 - [ ] Monitor training progress (4-6 hours)

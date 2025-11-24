@@ -163,12 +163,11 @@ cd ~/sn-gamestate
 
 # Start training with optimized configuration (dataset on netscratch)
 python finetune_yolo.py \
-  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
-  --base-model yolov8n.pt \
+  --dataset-dir /netscratch/eattar/ds/YOLO \
+  --base-model yolov8x.pt \
   --epochs 100 \
   --imgsz 1280 \
   --batch -1 \
-  --optimizer SGD \
   --output-name soccer_ball_soccernet_v3
 ```
 
@@ -177,12 +176,11 @@ python finetune_yolo.py \
 ```bash
 # Run in background with nohup
 nohup python finetune_yolo.py \
-  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
-  --base-model yolov8n.pt \
+  --dataset-dir /netscratch/eattar/ds/YOLO \
+  --base-model yolov8x.pt \
   --epochs 100 \
   --imgsz 1280 \
   --batch -1 \
-  --optimizer SGD \
   --output-name soccer_ball_soccernet_v3 \
   > training.log 2>&1 &
 
@@ -194,7 +192,7 @@ tail -f training.log
 
 # Or use screen/tmux
 screen -S yolo_training
-python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml ...
+python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO ...
 # Detach: Ctrl+A, D
 # Reattach: screen -r yolo_training
 ```
@@ -412,7 +410,7 @@ After fine-tuning:
 
 ```bash
 # Reduce batch size manually (instead of -1 auto)
-python finetune_yolo.py --batch 4 --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+python finetune_yolo.py --batch 4 --dataset-dir /netscratch/eattar/ds/YOLO
 ```
 
 ### Dataset Not Found
@@ -429,10 +427,10 @@ path: /netscratch/eattar/ds/YOLO
 
 ```bash
 # Use smaller image size (less accurate but works)
-python finetune_yolo.py --imgsz 640 --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+python finetune_yolo.py --imgsz 640 --dataset-dir /netscratch/eattar/ds/YOLO
 
-# Or use CPU (very slow, not recommended)
-python finetune_yolo.py --device cpu --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+# Or reduce batch size
+python finetune_yolo.py --batch 4 --dataset-dir /netscratch/eattar/ds/YOLO
 ```
 
 ### Training Stuck/Slow
@@ -445,7 +443,7 @@ nvidia-smi
 fuser -v /dev/nvidia*
 
 # Reduce workers if I/O is bottleneck
-python finetune_yolo.py --workers 4 --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+python finetune_yolo.py --batch 4 --dataset-dir /netscratch/eattar/ds/YOLO
 ```
 
 ### Resume Training After Interruption
@@ -453,7 +451,7 @@ python finetune_yolo.py --workers 4 --dataset-yaml /netscratch/eattar/ds/YOLO/da
 ```bash
 # Resume from last checkpoint
 python finetune_yolo.py \
-  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
+  --dataset-dir /netscratch/eattar/ds/YOLO \
   --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
 ```
 
@@ -480,7 +478,7 @@ scp -r eattar@134.96.204.42:~/sn-gamestate/runs/train/soccer_ball_soccernet_v3/ 
 wget https://zenodo.org/record/7808511/files/YOLO.zip && unzip YOLO.zip
 
 # Start training
-python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO
 
 # Monitor
 tail -f training.log

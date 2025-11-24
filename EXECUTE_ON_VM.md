@@ -34,34 +34,18 @@ ls -lh /netscratch/eattar/ds/YOLO
 # test/   (2,692 images)
 ```
 
-### 3. Create Dataset Configuration (1 minute)
-
-```bash
-cat > /netscratch/eattar/ds/YOLO/dataset.yaml << 'EOF'
-path: /netscratch/eattar/ds/YOLO
-train: train/images
-val: valid/images
-test: test/images
-nc: 2
-names: ['ball', 'person']
-EOF
-
-# Verify it was created correctly
-cat /netscratch/eattar/ds/YOLO/dataset.yaml
-```
-
 ### 4. Start Training (4-6 hours) ⏳
 
 **Option A: Foreground (stay logged in)**
 ```bash
 cd ~/sn-gamestate
-python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO
 ```
 
 **Option B: Background (recommended, can disconnect)**
 ```bash
 cd ~/sn-gamestate
-nohup python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml > training.log 2>&1 &
+nohup python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO > training.log 2>&1 &
 
 # Monitor progress
 tail -f training.log
@@ -133,7 +117,7 @@ python run_player_ball_actions.py \
 ```bash
 # Reduce batch size
 python finetune_yolo.py \
-  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
+  --dataset-dir /netscratch/eattar/ds/YOLO \
   --batch 4
 ```
 
@@ -141,7 +125,7 @@ python finetune_yolo.py \
 ```bash
 # Resume from last checkpoint
 python finetune_yolo.py \
-  --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml \
+  --dataset-dir /netscratch/eattar/ds/YOLO \
   --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
 ```
 
@@ -164,7 +148,6 @@ cat /netscratch/eattar/ds/YOLO/dataset.yaml
 |------|----------|--------|
 | SSH + Pull Code | 2 min | ⏱️ |
 | Verify Dataset | 30 sec | ⏱️ |
-| Create dataset.yaml | 1 min | ⏱️ |
 | **Training** | **4-6 hours** | ⏱️ |
 | Validation Test | 5 min | ⏱️ |
 | Download Model | 2 min | ⏱️ |
@@ -213,9 +196,6 @@ runs/train/soccer_ball_soccernet_v3/
 ```bash
 # Dataset
 /netscratch/eattar/ds/YOLO
-
-# Dataset config
-/netscratch/eattar/ds/YOLO/dataset.yaml
 
 # Training code
 ~/sn-gamestate/finetune_yolo.py

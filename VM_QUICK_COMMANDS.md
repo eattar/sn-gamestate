@@ -38,10 +38,10 @@ EOF
 cd ~/sn-gamestate
 
 # Option A: Run in foreground (stay logged in)
-python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml
+python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO
 
 # Option B: Run in background (can disconnect)
-nohup python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml > training.log 2>&1 &
+nohup python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO > training.log 2>&1 &
 tail -f training.log  # Monitor progress
 ```
 
@@ -90,12 +90,12 @@ cat runs/train/soccer_ball_soccernet_v3/results.csv
 
 **Out of Memory?**
 ```bash
-python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml --batch 4
+python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO --batch 4
 ```
 
 **Training Interrupted?**
 ```bash
-python finetune_yolo.py --dataset-yaml /netscratch/eattar/ds/YOLO/dataset.yaml --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
+python finetune_yolo.py --dataset-dir /netscratch/eattar/ds/YOLO --resume runs/train/soccer_ball_soccernet_v3/weights/last.pt
 ```
 
 ---

@@ -196,18 +196,48 @@ def main():
         print(f"Error: Dataset directory not found: {dataset_dir}")
         return
     
-    # Check if annotations have been reviewed
-    reviewed_file = dataset_dir / "annotations_reviewed.json"
-    if not reviewed_file.exists():
-        print("⚠️  Warning: annotations_reviewed.json not found.")
-        print("   It's recommended to review annotations first:")
-        print(f"   python review_annotations.py --annotations {dataset_dir}/annotations.json")
-        response = input("\nContinue with unreviewed annotations? (y/n): ")
-        if response.lower() != 'y':
-            return
+    # Check if dataset is already in YOLO format (SoccerNet pre-annotated)
+    train_dir = dataset_dir / "train" / "images"
+    val_dir = dataset_dir / "valid" / "images" or dataset_dir / "val" / "images"
     
-    # Prepare dataset
-    dataset_yaml = prepare_dataset(dataset_dir, args.train_split)
+    if train_dir.exists() and val_dir.exists():
+        print("✓ Pre-annotated dataset detected (YOLO format)")
+        print(f"  Train: {train_dir}")
+        print(f"  Val: {val_dir}")
+        
+        # Create dataset.yaml for pre-annotated data
+        dataset_config = {
+            'path': str(dataset_dir.absolute()),
+            'train': 'train/images',
+            'val': 'valid/images' if (dataset_dir / "valid").exists() else 'val/images',
+            'test': 'test/images' if (dataset_dir / "test" / "images").exists() else None,
+            'names': {0: 'ball'},
+            'nc': 1
+        }
+        
+        # Remove None test path
+        if dataset_config['test'] is None:
+            del dataset_config['test']
+        
+        dataset_yaml = dataset_dir / "dataset.yaml"
+        with open(dataset_yaml, 'w') as f:
+            yaml.dump(dataset_config, f, default_flow_style=False)
+        
+        print(f"✓ Created dataset config: {dataset_yaml}")
+        
+    else:
+        # Custom annotation workflow
+        reviewed_file = dataset_dir / "annotations_reviewed.json"
+        if not reviewed_file.exists():
+            print("⚠️  Warning: annotations_reviewed.json not found.")
+            print("   It's recommended to review annotations first:")
+            print(f"   python review_annotations.py --annotations {dataset_dir}/annotations.json")
+            response = input("\nContinue with unreviewed annotations? (y/n): ")
+            if response.lower() != 'y':
+                return
+        
+        # Prepare dataset from annotations
+        dataset_yaml = prepare_dataset(dataset_dir, args.train_split)
     
     # Train
     best_model = train_yolo(

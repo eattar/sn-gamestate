@@ -1,12 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=yolo-finetune
-#SBATCH --output=/netscratch/eattar/logs/yolo_training_%j.log
+#SBATCH --output=/netscratch/eattar/logs/yolo_training_%j.out
 #SBATCH --error=/netscratch/eattar/logs/yolo_training_%j.err
-#SBATCH --time=06:00:00
-#SBATCH --mem=64G
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
+#SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu
+#SBATCH --time=06:00:00
 
 # Print job info
 echo "=================================================="

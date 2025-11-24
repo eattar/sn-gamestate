@@ -1,11 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=yolo-finetune
 #SBATCH --output=/netscratch/eattar/logs/yolo_training_%j.log
-#SBATCH --time=06:00:00
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=64G
+#SBATCH --time=00-04:00:00
+#SBATCH --partition=L40S
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gpus-per-task=1
+#SBATCH --cpus-per-gpu=4
+#SBATCH --mem-per-gpu=150G
+#SBATCH --container-mounts=/netscratch:/netscratch,/workspace:/workspace
+#SBATCH --container-image=/netscratch/eattar/images/ball-action.sqsh
 
 # Print job info
 echo "=================================================="
@@ -19,7 +23,7 @@ mkdir -p /netscratch/eattar/logs
 mkdir -p /netscratch/eattar/yolo-weights
 
 # Navigate to project directory
-cd /workspace/sn-gamestate || cd ~/sn-gamestate
+cd /workspace/sn-gamestate
 
 # Pull latest code from git
 echo "Pulling latest code from git..."
@@ -27,10 +31,12 @@ git fetch origin
 git checkout ball-action-integration
 git pull origin ball-action-integration
 
-# Activate conda environment
+# Activate conda environment (if using container, may already be activated)
 echo "Activating conda environment..."
-source /root/miniconda/etc/profile.d/conda.sh
-conda activate ball-action-spotting
+if [ -f /root/miniconda/etc/profile.d/conda.sh ]; then
+    source /root/miniconda/etc/profile.d/conda.sh
+    conda activate ball-action-spotting
+fi
 
 # Verify environment
 echo "Python: $(which python)"

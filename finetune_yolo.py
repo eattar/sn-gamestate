@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """
-Fine-tune YOLO on soccer ball dataset.
+Fine-tune YOLO on soccer ball dataset. 
 Run this after reviewing and correcting annotations.
 """
+
+# =============================================================================
+# CRITICAL: Set environment variables BEFORE importing ultralytics/torch
+# This prevents "Default process group has not been initialized" error
+# =============================================================================
+import os
+os.environ['RANK'] = '-1'
+os.environ['LOCAL_RANK'] = '-1'
+os.environ['WORLD_SIZE'] = '1'
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 import argparse
 from pathlib import Path
@@ -52,16 +62,16 @@ def prepare_dataset(annotations_dir: Path, train_split: float = 0.8):
         if label.exists():
             shutil.copy(label, val_labels_dir / label.name)
     
-    # Create updated dataset.yaml
+    # Create updated dataset. yaml
     dataset_config = {
-        'path': str(annotations_dir.absolute()),
+        'path': str(annotations_dir. absolute()),
         'train': 'train/images',
         'val': 'val/images',
         'names': {0: 'ball'},
         'nc': 1
     }
     
-    yaml_path = annotations_dir / "dataset.yaml"
+    yaml_path = annotations_dir / "dataset. yaml"
     with open(yaml_path, 'w') as f:
         yaml.dump(dataset_config, f, default_flow_style=False)
     
@@ -77,7 +87,7 @@ def train_yolo(dataset_yaml: Path,
                output_name: str = 'soccer_ball_soccernet_v3',
                optimizer: str = 'SGD'):
     """
-    Fine-tune YOLO on soccer ball dataset.
+    Fine-tune YOLO on soccer ball dataset. 
     Uses optimized configuration from kmouts/FootAndBall research.
     
     Args:
@@ -112,7 +122,7 @@ def train_yolo(dataset_yaml: Path,
         batch=batch,
         patience=5,  # Early stopping (kmouts config)
         save=True,
-        device='cuda',  # Use GPU (change to 'cpu' if no GPU)
+        device=0,  # Use first GPU in single-process mode (change to 'cpu' if no GPU)
         
         # Optimization (kmouts config: SGD instead of Adam)
         optimizer=optimizer,
@@ -131,7 +141,7 @@ def train_yolo(dataset_yaml: Path,
         
         # Detection parameters
         conf=0.01,  # Low confidence during training
-        iou=0.5,
+        iou=0. 5,
         
         # Augmentation (optimized for soccer balls)
         augment=True,
@@ -177,7 +187,7 @@ def main():
     parser.add_argument('--dataset-dir', type=str, required=True,
                        help='Directory containing annotations (from auto_annotate_balls.py)')
     parser.add_argument('--base-model', type=str, default='yolov8x.pt',
-                       help='Base YOLO model to fine-tune (default: yolov8x.pt)')
+                       help='Base YOLO model to fine-tune (default: yolov8x. pt)')
     parser.add_argument('--epochs', type=int, default=50,
                        help='Training epochs (default: 50)')
     parser.add_argument('--imgsz', type=int, default=1280,
@@ -221,7 +231,7 @@ def main():
         
         dataset_yaml = dataset_dir / "dataset.yaml"
         with open(dataset_yaml, 'w') as f:
-            yaml.dump(dataset_config, f, default_flow_style=False)
+            yaml. dump(dataset_config, f, default_flow_style=False)
         
         print(f"✓ Created dataset config: {dataset_yaml}")
         

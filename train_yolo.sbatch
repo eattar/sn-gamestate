@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=yolo-finetune
 #SBATCH --output=/netscratch/eattar/logs/yolo_training_%j.log
-#SBATCH --time=00-04:00:00
+#SBATCH --time=00-12:00:00
 #SBATCH --partition=L40S
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=1
-#SBATCH --cpus-per-gpu=4
+#SBATCH --cpus-per-gpu=12
 #SBATCH --mem-per-gpu=150G
 #SBATCH --container-mounts=/netscratch:/netscratch,/workspace:/workspace
 #SBATCH --container-image=/netscratch/eattar/images/ball-action.sqsh
@@ -53,12 +53,12 @@ echo "=================================================="
 # Start training
 echo "Starting YOLO training..."
 python finetune_yolo.py \
-  --dataset-dir /netscratch/eattar/ds/YOLO \
-  --base-model yolov8x.pt \
-  --epochs 50 \
-  --imgsz 1280 \
-  --batch 16 \
-  --output-name soccer_ball_yolo
+    --dataset-dir /netscratch/eattar/ds/YOLO \
+    --base-model yolov8x.pt \
+    --epochs 50 \
+    --imgsz 1280 \
+    --batch -1 \
+    --output-name soccer_ball_yolo
 
 # Check if training completed successfully
 if [ $? -eq 0 ]; then

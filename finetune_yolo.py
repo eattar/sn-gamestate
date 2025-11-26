@@ -141,7 +141,7 @@ def train_yolo(dataset_yaml: Path,
         
         # Detection parameters
         conf=0.01,  # Low confidence during training
-        iou=0. 5,
+        iou=0.5,
         
         # Augmentation (optimized for soccer balls)
         augment=True,

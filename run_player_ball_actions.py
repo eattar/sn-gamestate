@@ -765,46 +765,36 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                                 filtered_reasons.append(f"height={height_ratio:.2f}")
                                 continue
                             
-                            # Soccer-specific Filter 2: Size constraints (consistent ball size)
-                            if b_w < ball_min_size or b_h < ball_min_size:
-                                filtered_reasons.append(f"too_small={min(b_w,b_h):.0f}px")
-                                continue  # Too small
-                            if b_w > ball_max_size or b_h > ball_max_size:
-                                filtered_reasons.append(f"too_large={max(b_w,b_h):.0f}px")
-                                continue  # Too large (likely not a ball)
+                            # For fine-tuned models, we trust the model's output and skip heuristic filters
+                            passes_filters = True
                             
-                            # Soccer-specific Filter 3: Aspect ratio (ball should be roughly circular)
-                            aspect_ratio = b_w / b_h if b_h > 0 else 999
-                            if aspect_ratio > 1.35 or aspect_ratio < 0.74:  # Tighter: shoes are often elongated
-                                filtered_reasons.append(f"aspect={aspect_ratio:.2f}")
-                                continue
-                            
-                            # Soccer-specific Filter 4: Color filter (exclude dark objects like shoes)
-                            if filter_dark_colors and debug_img is not None:
-                                # Extract ball region from image
-                                b_x1, b_y1 = max(0, int(b_x - b_w/2)), max(0, int(b_y - b_h/2))
-                                b_x2, b_y2 = min(debug_img.shape[1], int(b_x + b_w/2)), min(debug_img.shape[0], int(b_y + b_h/2))
+                            # Only apply color filter if explicitly requested (and we have the image)
+                            if passes_filters and filter_dark_colors and debug_img is not None:
+                                # Extract ball ROI
+                                x1, y1 = max(0, int(b_x - b_w/2)), max(0, int(b_y - b_h/2))
+                                x2, y2 = min(frame_width, int(b_x + b_w/2)), min(frame_height, int(b_y + b_h/2))
                                 
-                                if b_x2 > b_x1 and b_y2 > b_y1:
-                                    ball_region = debug_img[b_y1:b_y2, b_x1:b_x2]
-                                    if ball_region.size > 0:
-                                        # Convert to HSV for better color analysis
-                                        hsv_region = cv2.cvtColor(ball_region, cv2.COLOR_BGR2HSV)
+                                if x2 > x1 and y2 > y1:
+                                    ball_roi = debug_img[y1:y2, x1:x2]
+                                    if ball_roi.size > 0:
+                                        # Convert to HSV
+                                        hsv = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
+                                        # Check brightness (V channel)
+                                        mean_v = np.mean(hsv[:, :, 2])
+                                        # Check saturation (S channel) - balls are usually white (low sat) or bright colored
+                                        mean_s = np.mean(hsv[:, :, 1])
                                         
-                                        # Calculate mean brightness (V) and saturation (S)
-                                        mean_brightness = hsv_region[:, :, 2].mean()
-                                        mean_saturation = hsv_region[:, :, 1].mean()
-                                        
-                                        # Filter out dark objects (shoes are typically black/brown with low brightness)
-                                        if mean_brightness < min_brightness:
-                                            filtered_reasons.append(f"dark=V{mean_brightness:.0f}")
-                                            continue
-                                        
+                                        if mean_v < min_brightness:
+                                            passes_filters = False
+                                            filtered_reasons.append(f"dark(v={mean_v:.1f})")
                                         # Optional: very desaturated + dark = likely shoe/dark object
                                         # But allow white balls (low saturation + high brightness)
-                                        if mean_saturation < min_saturation and mean_brightness < 150:
-                                            filtered_reasons.append(f"gray=S{mean_saturation:.0f}_V{mean_brightness:.0f}")
-                                            continue
+                                        elif mean_s < min_saturation and mean_v < 150:
+                                            passes_filters = False
+                                            filtered_reasons.append(f"gray(s={mean_s:.1f}_v={mean_v:.1f})")
+                            
+                            if not passes_filters:
+                                continue
                             
                             b_center = (b_x, b_y)
                             d = ((player_center[0] - b_center[0])**2 + (player_center[1] - b_center[1])**2)**0.5
@@ -930,24 +920,12 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                                     b_xywh = b.xywh[0].cpu().numpy()
                                     b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
                                     
-                                    # Apply same filters to determine color
-                                    height_ratio = b_y / frame_height
-                                    aspect_ratio = b_w / b_h if b_h > 0 else 999
-                                    
-                                    # Check if detection passes all filters
-                                    height_ratio_calc = b_y / img_height
-                                    passes_filters = (
-                                        height_ratio_calc >= (1.0 - ball_max_height) and
-                                        b_w >= ball_min_size and b_h >= ball_min_size and
-                                        b_w <= ball_max_size and b_h <= ball_max_size and
-                                        aspect_ratio <= 1.35 and aspect_ratio >= 0.74
-                                    )
-                                    
                                     b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
                                     b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
                                     
-                                    # Blue for valid ball, Red for filtered out
-                                    color = (255, 0, 0) if passes_filters else (0, 0, 255)
+                                    # Blue for valid ball
+                                    color = (255, 0, 0)
+
                                     cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
 
                         # Save the image

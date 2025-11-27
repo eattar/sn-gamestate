@@ -620,12 +620,28 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                 from ultralytics import YOLO
                 ball_detector = YOLO(ball_model)
                 has_ball_detector = True
-                print(f"   ✓ YOLO ball detector ready ({ball_model})")
+                
+                # AUTO-DETECT BALL CLASS ID
+                ball_class_id = None
+                class_names = ball_detector.names
+                for cls_id, cls_name in class_names.items():
+                    if cls_name.lower() in ['ball', 'sports ball']:
+                        ball_class_id = cls_id
+                        break
+                
+                if ball_class_id is None:
+                    ball_class_id = 0
+                    print(f"   ⚠️  Warning: 'ball' class not found. Using class 0.")
+                
+                print(f"   ✓ YOLO detector ready: {ball_model}")
+                print(f"   ✓ Ball class: {ball_class_id} ('{class_names[ball_class_id]}')")
+                print(f"   ✓ Total classes: {len(class_names)} - {list(class_names.values())}")
+                
             except Exception as e:
                 print(f"   ⚠️  Could not initialize ball detector: {e}")
-                print("   Actions will be rejected without ball verification.")
                 has_ball_detector = False
                 ball_detector = None
+                ball_class_id = 0
 
     for action in tqdm(filtered_actions, desc="Matching actions"):
         action_frame = action['frame']
@@ -719,9 +735,13 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         print(f"    Frame {frame_to_check}: {num_detections} TrackNet detections")
                     else:
                         # YOLO detection
-                        results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
+                        results = ball_detector(str(frame_path), classes=[ball_class_id], conf=ball_confidence, verbose=False)
                         if results and len(results) > 0 and len(results[0].boxes) > 0:
                             for b in results[0].boxes:
+                                # ONLY process ball class (skip person detections)
+                                if int(b.cls) != ball_class_id:
+                                    continue
+                                    
                                 b_xywh = b.xywh[0].cpu().numpy()
                                 b_conf = float(b.conf[0])
                                 ball_detections.append((
@@ -900,9 +920,13 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                         
                         # Re-run ball detection on this specific frame for visualization (YOLO only)
                         if not using_tracknet:
-                            final_results = ball_detector(str(frame_path), classes=[32], conf=ball_confidence, verbose=False)
+                            final_results = ball_detector(str(frame_path), classes=[ball_class_id], conf=ball_confidence, verbose=False)
                             if final_results and len(final_results) > 0 and len(final_results[0].boxes) > 0:
                                 for b in final_results[0].boxes:
+                                    # ONLY process ball class (skip person detections)
+                                    if int(b.cls) != ball_class_id:
+                                        continue
+                                        
                                     b_xywh = b.xywh[0].cpu().numpy()
                                     b_x, b_y, b_w, b_h = float(b_xywh[0]), float(b_xywh[1]), float(b_xywh[2]), float(b_xywh[3])
                                     
@@ -1493,12 +1517,16 @@ def show_all_actions_with_players(actions: List[Dict], detections: pd.DataFrame,
                     import cv2
                     frame_img = cv2.imread(str(frame_path))
                     if frame_img is not None:
-                        results = ball_detector(frame_img, classes=[32], conf=0.15, verbose=False)
+                        results = ball_detector(frame_img, classes=[ball_class_id], conf=0.15, verbose=False)
                         if results and len(results) > 0 and len(results[0].boxes) > 0:
                             ball_dets = results[0].boxes
                             # Find closest ball to top candidate
                             min_ball_dist = float('inf')
                             for b in ball_dets:
+                                # ONLY process ball class (skip person detections)
+                                if int(b.cls) != ball_class_id:
+                                    continue
+                                    
                                 b_xywh = b.xywh[0].cpu().numpy()
                                 b_center = (float(b_xywh[0]), float(b_xywh[1]))
                                 d = ((candidates[0]['bbox_center'][0] - b_center[0])**2 + 

@@ -761,9 +761,10 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             # Soccer-specific Filter 1: Height constraint (ball is usually on ground)
                             # Normalize Y coordinate to 0-1 range (0=top, 1=bottom)
                             height_ratio = b_y / img_height
-                            if height_ratio < (1.0 - ball_max_height):  # Ball too high in frame
-                                filtered_reasons.append(f"height={height_ratio:.2f}")
-                                continue
+                            # SKIPPED for fine-tuned model robustness
+                            # if height_ratio < (1.0 - ball_max_height):  # Ball too high in frame
+                            #     filtered_reasons.append(f"height={height_ratio:.2f}")
+                            #     continue
                             
                             # For fine-tuned models, we trust the model's output and skip heuristic filters
                             passes_filters = True
@@ -798,6 +799,9 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             
                             b_center = (b_x, b_y)
                             d = ((player_center[0] - b_center[0])**2 + (player_center[1] - b_center[1])**2)**0.5
+                            
+                            # Debug: Print detection details
+                            print(f"      - Det: pos=({b_center[0]:.0f},{b_center[1]:.0f}), dist={d:.1f}px, conf={b_conf:.2f}, height={height_ratio:.2f}")
                             
                             # Draw ball bbox on debug image if available
                             if debug_img is not None:

@@ -120,7 +120,7 @@ def train_yolo(dataset_yaml: Path,
         epochs=epochs,
         imgsz=imgsz,
         batch=batch,
-        patience=5,  # Early stopping (kmouts config)
+        patience=15,  # Increased patience to allow better convergence
         save=True,
         device=0,  # Use first GPU in single-process mode (change to 'cpu' if no GPU)
         
@@ -128,6 +128,7 @@ def train_yolo(dataset_yaml: Path,
         optimizer=optimizer,
         lr0=0.001,  # Lower learning rate for fine-tuning
         lrf=0.01,
+        cos_lr=True, # Cosine learning rate scheduler
         momentum=0.937,
         weight_decay=0.0005,
         warmup_epochs=3,
@@ -148,11 +149,12 @@ def train_yolo(dataset_yaml: Path,
         hsv_h=0.015,
         hsv_s=0.7,
         hsv_v=0.4,
-        degrees=5,  # Reduced rotation for broadcast
+        degrees=15,  # Increased rotation
         translate=0.1,
-        scale=0.5,
+        scale=0.8,   # Increased scale range
         fliplr=0.5,
         mosaic=1.0,  # Full mosaic (kmouts uses 1.0)
+        mixup=0.1,   # Enable mixup
         
         # Output
         project='runs/train',

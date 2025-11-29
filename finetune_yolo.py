@@ -85,6 +85,7 @@ def train_yolo(dataset_yaml: Path,
                imgsz: int = 1280,
                batch: int = -1,
                output_name: str = 'soccer_ball_soccernet_v3',
+               project_dir: str = 'runs/train',
                optimizer: str = 'SGD'):
     """
     Fine-tune YOLO on soccer ball dataset. 
@@ -157,7 +158,7 @@ def train_yolo(dataset_yaml: Path,
         mixup=0.1,   # Enable mixup
         
         # Output
-        project='runs/train',
+        project=project_dir,
         name=output_name,
         exist_ok=True,
         
@@ -166,7 +167,7 @@ def train_yolo(dataset_yaml: Path,
     )
     
     # Get best model path
-    best_model_path = Path('runs/train') / output_name / 'weights' / 'best.pt'
+    best_model_path = Path(project_dir) / output_name / 'weights' / 'best.pt'
     
     print("\n" + "="*60)
     print("Training Complete!")
@@ -200,6 +201,8 @@ def main():
                        help='Train/val split ratio (default: 0.8)')
     parser.add_argument('--output-name', type=str, default='soccer_ball_yolo',
                        help='Output model name (default: soccer_ball_yolo)')
+    parser.add_argument('--project-dir', type=str, default='runs/train',
+                       help='Directory to save training results (default: runs/train)')
     
     args = parser.parse_args()
     
@@ -258,7 +261,8 @@ def main():
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
-        output_name=args.output_name
+        output_name=args.output_name,
+        project_dir=args.project_dir
     )
 
 

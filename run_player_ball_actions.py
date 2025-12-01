@@ -845,19 +845,22 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                                         closest_jersey = "Other"
                                         print(f"      ❌ Rejected: Another player is closer ({min_other_dist:.1f}px vs {d:.1f}px)")
                             
-                            if not is_closest_player:
-                                continue
-
-                            
                             # Draw ball bbox on debug image if available
                             if debug_img is not None:
-                                # This detection passed all filters (since we're here)
-                                passes_filters = True
                                 b_x1, b_y1 = int(b_x - b_w/2), int(b_y - b_h/2)
                                 b_x2, b_y2 = int(b_x + b_w/2), int(b_y + b_h/2)
-                                # Blue for valid ball (passed all filters including color)
-                                color = (255, 0, 0)
+                                
+                                if is_closest_player:
+                                    # Blue for valid ball (closest to selected player)
+                                    color = (255, 0, 0)
+                                else:
+                                    # Red for rejected ball (closer to another player)
+                                    color = (0, 0, 255)
+                                    
                                 cv2.rectangle(debug_img, (b_x1, b_y1), (b_x2, b_y2), color, 2)
+
+                            if not is_closest_player:
+                                continue
                             
                             if player_center is not None and d < best_ball_info['dist']:
                                 best_ball_info['dist'] = d

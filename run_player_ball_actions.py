@@ -530,7 +530,8 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             max_ball_distance: int = 150,
                             filter_dark_colors: bool = False,
                             min_brightness: int = 60,
-                            min_saturation: int = 30) -> List[Dict]:
+                            min_saturation: int = 30,
+                            all_player_dets: pd.DataFrame = None) -> List[Dict]:
     """
     Match detected actions to player using temporal proximity and spatial overlap
     
@@ -802,6 +803,51 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
                             
                             # Debug: Print detection details
                             print(f"      - Det: pos=({b_center[0]:.0f},{b_center[1]:.0f}), dist={d:.1f}px, conf={b_conf:.2f}, height={height_ratio:.2f}")
+                            
+                            # ---------------------------------------------------------
+                            # CLOSEST PLAYER CHECK (Refined Logic)
+                            # ---------------------------------------------------------
+                            is_closest_player = True
+                            closest_dist = d
+                            closest_jersey = "Selected"
+                            
+                            if all_player_dets is not None:
+                                # Find all players in this frame
+                                frame_players = all_player_dets[all_player_dets['image_id'].astype(str).str.endswith(f"{frame_to_check:06d}")]
+                                
+                                if not frame_players.empty:
+                                    min_other_dist = float('inf')
+                                    
+                                    for _, p_row in frame_players.iterrows():
+                                        # Skip if this is the selected player (approximate check by bbox overlap or ID)
+                                        # Since we don't have track IDs easily matched, we check bbox overlap
+                                        if player_bbox_ltwh is not None:
+                                            p_bbox = p_row['bbox_ltwh']
+                                            # If bbox is identical/very close, it's the selected player
+                                            if abs(p_bbox[0] - player_bbox_ltwh[0]) < 10 and abs(p_bbox[1] - player_bbox_ltwh[1]) < 10:
+                                                continue
+                                        
+                                        # Calculate distance for this other player
+                                        if not pd.isna(p_row['bbox_ltwh']).any():
+                                            p_l, p_t, p_w, p_h = p_row['bbox_ltwh']
+                                            p_cx, p_cy = p_l + p_w/2, p_t + p_h/2
+                                            p_dist = ((p_cx - b_center[0])**2 + (p_cy - b_center[1])**2)**0.5
+                                            
+                                            if p_dist < min_other_dist:
+                                                min_other_dist = p_dist
+                                    
+                                    # Check if someone else is significantly closer
+                                    # We allow a small margin (e.g. 20px) where we still prefer the selected player
+                                    # if they are "close enough" to the closest one.
+                                    if min_other_dist < d - 20:
+                                        is_closest_player = False
+                                        closest_dist = min_other_dist
+                                        closest_jersey = "Other"
+                                        print(f"      ❌ Rejected: Another player is closer ({min_other_dist:.1f}px vs {d:.1f}px)")
+                            
+                            if not is_closest_player:
+                                continue
+
                             
                             # Draw ball bbox on debug image if available
                             if debug_img is not None:
@@ -1887,7 +1933,8 @@ def main():
         max_ball_distance=args.max_ball_distance,
         filter_dark_colors=args.filter_dark_colors,
         min_brightness=args.min_brightness,
-        min_saturation=args.min_saturation
+        min_saturation=args.min_saturation,
+        all_player_dets=detections  # Pass all detections for closest player check
     )
     
     # Step 5: Create output

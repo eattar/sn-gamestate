@@ -1041,11 +1041,12 @@ def match_actions_to_player(actions: List[Dict], player_dets: pd.DataFrame,
 
 
 def format_time(frame: int, fps: float) -> str:
-    """Convert frame number to MM:SS format"""
-    seconds = int((frame - 1) / fps)
-    minutes = seconds // 60
-    secs = seconds % 60
-    return f"{minutes}:{secs:02d}"
+    """Convert frame number to MM:SS.mmm format"""
+    total_seconds = (frame - 1) / fps
+    minutes = int(total_seconds // 60)
+    seconds = int(total_seconds % 60)
+    milliseconds = int((total_seconds % 1) * 1000)
+    return f"{minutes}:{seconds:02d}.{milliseconds:03d}"
 
 
 def create_output_json(matched_actions: List[Dict], team: str, jersey: int, 
